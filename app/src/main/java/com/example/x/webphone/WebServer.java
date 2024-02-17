@@ -1,6 +1,6 @@
 /*
  * WEBPHONE
- * Copyright (C) 2020 Adam Williams <broadcast at earthling dot net>
+ * Copyright (C) 2020-2024 Adam Williams <broadcast at earthling dot net>
  * 
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 
 package com.example.x.webphone;
 
+import android.annotation.SuppressLint;
 import android.os.Build;
 import android.util.Log;
 
@@ -43,11 +44,14 @@ import java.nio.file.FileSystemLoopException;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.text.SimpleDateFormat;
-import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Comparator;
 import java.util.Date;
+import java.util.Dictionary;
+import java.util.HashMap;
+import java.util.Hashtable;
+import java.util.Map;
 import java.util.Vector;
 import java.util.concurrent.Semaphore;
 
@@ -58,6 +62,8 @@ public class WebServer extends Thread
 {
     int TOTAL_THREADS = 20;
     WebServerThread threads[] = new WebServerThread[TOTAL_THREADS];
+    final String CHECKED = "__CHECKED";
+
 
     public void run()
     {
@@ -162,6 +168,8 @@ public class WebServer extends Thread
             return "application/javascript";
         else if (path.endsWith(".mp3"))
             return "audio/mpeg3";
+        else if (path.endsWith(".mp4"))
+            return "video/mp4";
         else if (path.endsWith(".pdf"))
             return "application/pdf";
         else if (path.endsWith(".png"))
@@ -334,15 +342,23 @@ public class WebServer extends Thread
             while(true)
             {
                 int c = readChar(in);
-                if(c < 0 || c == '\n')
+                if(c < 0)
                 {
+                    Log.i("WebServerThread", "readLine c=" + c);
                     break;
                 }
+                if(c == '\n')
+                {
+                    result.append((char) c);
+                    break;
+                }
+// strip \r
                 if(c != '\r') {
                     result.append((char) c);
                 }
             }
 
+//            Log.i("WebServerThread", "readLine text=" + result.toString());
             return result.toString();
         }
 
@@ -371,7 +387,7 @@ public class WebServer extends Thread
             byte[] result = new byte[1024];
             int offset = 0;
 
-            // read until the terminating sequence
+// read until the terminating sequence
             while(true)
             {
                 int nextChar = readChar(in);
@@ -381,7 +397,7 @@ public class WebServer extends Thread
                     break;
                 }
 
-                // expand the array
+// expand the array
                 if(offset >= result.length)
                 {
                     byte[] result2 = new byte[result.length * 2];
@@ -401,14 +417,14 @@ public class WebServer extends Thread
                         }
                     }
 
-                    // truncate the result & return it
+// truncate the result & return it
                     if(gotIt)
                     {
                         byte[] result2 = new byte[fileEnd];
                         System.arraycopy(result, 0, result2, 0, fileEnd);
 //                        Log.i("x", "WebServerThread.readUntil 2");
 
-                        // read 2 more characters to test for an EOF.  They'll be \r\n or --
+// read 2 more characters to test for an EOF.  They'll be \r\n or --
                         if(testEOF) {
                             nextChar = readChar(in);
                             if (nextChar == '-') {
@@ -433,15 +449,15 @@ public class WebServer extends Thread
             try
             {
                 PrintStream pout = new PrintStream(out);
-                Log.i("x", "WebServerThread.sendFiles 1 path=" + path);
+                Log.i("WebServerThread", "sendFiles 1 path=" + path);
                 File f = new File(path);
                 if (f.isDirectory())
                 {
                     // send the directory listing
-                    Log.i("x", "WebServerThread.sendFiles 2 isDirectory CanonicalPath=" + f.getCanonicalPath());
+                    Log.i("WebServerThread", "sendFiles 2 isDirectory CanonicalPath=" + f.getCanonicalPath());
 
                     File[] mFileList = f.listFiles();
-                    Log.i("x", "WebServerThread.sendFiles 3 mFileList=" + mFileList);
+                    Log.i("WebServerThread", "sendFiles 3 mFileList=" + mFileList);
 
                     if (mFileList != null)
                     {
@@ -449,7 +465,7 @@ public class WebServer extends Thread
                         for (int i = 0; i < mFileList.length; i++) {
                             files[i] = new DirEntry(mFileList[i].getAbsolutePath());
                         }
-                        // TODO: sort by date, name, & size
+// TODO: sort by date, name, & size
                         switch (Stuff.sortOrder) {
                             case Stuff.SORT_SIZE:
                                 Arrays.sort(files, new SortBySize());
@@ -471,25 +487,26 @@ public class WebServer extends Thread
 // the order of the widgets determines the order of the form data
                         pout.print("<FORM METHOD=\"post\" ENCTYPE=\"multipart/form-data\" >\r\n");
                         pout.print("Upload files to this directory:<BR>\n");
-                        pout.print("<INPUT TYPE=\"file\" NAME=\"UPLOAD\" MULTIPLE=\"true\">\n");
-                        pout.print("<INPUT TYPE=\"submit\" VALUE=\"UPLOAD\" NAME=\"submit\">\n");
+                        pout.print("<INPUT TYPE=\"file\" NAME=\"__UPLOAD\" MULTIPLE=\"true\">\n");
+                        pout.print("<INPUT TYPE=\"submit\" VALUE=\"UPLOAD\" NAME=\"__UPLOAD\">\n");
                         pout.print("</FORM>\r\n");
 
                         pout.print("<FORM METHOD=\"post\" ENCTYPE=\"multipart/form-data\" >\r\n");
                         pout.print("Create a directory:<BR>\n");
-                        pout.print("<INPUT TYPE=\"text\" NAME=\"MKDIR\">\n");
-                        pout.print("<BUTTON TYPE=\"submit\" VALUE=\"MKDIR\" NAME=\"MKDIR\">MAKE DIRECTORY</BUTTON><BR>\n");
+                        pout.print("<INPUT TYPE=\"text\" NAME=\"__MKDIRPATH\">\n");
+                        pout.print("<BUTTON TYPE=\"submit\" VALUE=\"__MKDIR\" NAME=\"__MKDIR\">MAKE DIRECTORY</BUTTON><BR>\n");
                         pout.print("</FORM>\r\n");
 
 
                         pout.print("<FORM METHOD=\"post\" ENCTYPE=\"multipart/form-data\">\r\n");
 
                         pout.print("Move the selected files to another directory:<BR>\n");
-                        pout.print("<INPUT TYPE=\"text\" NAME=\"MOVEPATH\">\n");
-                        pout.print("<BUTTON TYPE=\"submit\" VALUE=\"MOVE\" NAME=\"MOVE\">MOVE FILES</BUTTON><P>\n");
+                        pout.print("<INPUT TYPE=\"text\" NAME=\"__MOVEPATH\">\n");
+                        pout.print("<BUTTON TYPE=\"submit\" VALUE=\"__MOVE\" NAME=\"__MOVE\">MOVE FILES</BUTTON><P>\n");
 
-                        pout.print("<BUTTON TYPE=\"submit\" VALUE=\"DELETE\" NAME=\"DELETE\">DELETE SELECTED FILES</BUTTON>\n");
-                        pout.print("<BUTTON TYPE=\"submit\" VALUE=\"RENAME\" NAME=\"RENAME\">RENAME SELECTED FILES</BUTTON>\n");
+                        pout.print("<BUTTON TYPE=\"submit\" VALUE=\"__DELETE\" NAME=\"__DELETE\">DELETE</BUTTON>\n");
+                        pout.print("<BUTTON TYPE=\"submit\" VALUE=\"__RENAME\" NAME=\"__RENAME\">RENAME</BUTTON>\n");
+                        pout.print("<BUTTON TYPE=\"submit\" VALUE=\"__EDIT\" NAME=\"__EDIT\">EDIT</BUTTON>\n");
                         pout.print("<TABLE>\r\n");
 
                         // create the .. entry
@@ -500,7 +517,7 @@ public class WebServer extends Thread
                                 truncated = truncated.substring(0, i + 1);
                             }
 
-                            Log.i("x", "WebServerThread.sendFiles 2 truncated=" + truncated);
+                            Log.i("WebServerThread", "sendFiles 2 truncated=" + truncated);
 
                             String urlText = "<A HREF=\"" +
                                     truncated +
@@ -549,7 +566,7 @@ public class WebServer extends Thread
                                 "</TD><TD>" +
                                     "<INPUT TYPE=\"checkbox\" ID=\"a\" NAME=\"" + 
                                     files[i].name + 
-                                    "\" VALUE=\"c\">" +
+                                    "\" VALUE=\"" + CHECKED + "\">" +
                                     textBegin +
                                     filenameText +
                                 "</TD></TR>\r\n"
@@ -582,15 +599,18 @@ public class WebServer extends Thread
                                 "The requested URL was not found on this server.");
                     }
                 }
-                Log.i("x", "WebServerThread.sendFiles 4 done");
+                Log.i("WebServerThread", "sendFiles 4 done");
                 pout.flush();
             } catch(Exception e)
             {
-                Log.v("x", "WebServerThread.sendFiles: " + e);
+                Log.v("WebServerThread", "sendFiles: " + e);
             }
         }
 
-        public void confirmMove(String path, String movePath, Vector<String> fileList, OutputStream out)
+        public void confirmMove(String path, 
+            OutputStream out, 
+            Vector<String> fileList,
+            String movePath)
         {
             try
             {
@@ -607,7 +627,7 @@ public class WebServer extends Thread
                 }
 
                 pout.print("<B>Really move the following files to " + fullDst + "?</B><P>\r\n");
-                for(int i = 1; i < fileList.size(); i++)
+                for(int i = 0; i < fileList.size(); i++)
                 {
                     pout.print(fileList.get(i) + "<BR>\r\n");
                 }
@@ -615,22 +635,18 @@ public class WebServer extends Thread
                 pout.print("<P>\r\n");
                 pout.print("<FORM METHOD=\"post\" ENCTYPE=\"multipart/form-data\" >\r\n");
 // the buttons go first so they get the 1st form part
-                pout.print("<BUTTON TYPE=\"submit\" VALUE=\"CONFIRMMOVE\" NAME=\"CONFIRMMOVE\">MOVE</BUTTON>\n");
+                pout.print("<BUTTON TYPE=\"submit\" VALUE=\"__CONFIRMMOVE\" NAME=\"__CONFIRMMOVE\">MOVE</BUTTON>\n");
                 pout.print("<BUTTON TYPE=\"submit\" VALUE=\"ABORTMOVE\" NAME=\"ABORTMOVE\">DON'T MOVE</BUTTON><P>\n");
 
-                pout.print("<INPUT HIDDEN=\"true\" TYPE=\"text\" id=\"a\" name=\"" +
-                        fullDst +
-                        "\" value=\"" +
-                        fullDst +
-                        "\">\r\n");
+// resend the destination
+                pout.print("<INPUT HIDDEN=\"true\" TYPE=\"text\" id=\"a\" name=\"__MOVEPATH\" value=\"" + fullDst + "\">\r\n");
 
-                for(int i = 1; i < fileList.size(); i++)
+// resend the file list
+                for(int i = 0; i < fileList.size(); i++)
                 {
                     pout.print("<INPUT HIDDEN=\"true\" TYPE=\"text\" id=\"a\" name=\"" +
                             fileList.get(i) +
-                            "\" value=\"" +
-                            fileList.get(i) +
-                            "\">\r\n");
+                            "\" value=\"" + CHECKED + "\">\r\n");
                 }
 
                 pout.print("</FORM>\r\n");
@@ -641,59 +657,56 @@ public class WebServer extends Thread
             }
         }
 
-        public void confirmDelete(String path, Vector<String> fileList, OutputStream out)
+        public void confirmDelete(String path, OutputStream out, Vector<String> fileList)
         {
+//Log.i("WebServerThread", "confirmDelete fileList=" + fileList.size());
             try
             {
                 PrintStream pout = new PrintStream(out);
                 sendHeader(pout, "text/html");
                 pout.print("<B>Really delete the following files in " + path + "?</B><P>\r\n");
-                for(int i = 1; i < fileList.size(); i++)
+                for(int i = 0; i < fileList.size(); i++)
                 {
+//Log.i("WebServerThread", "confirmDelete file=" + fileList.get(i));
                     pout.print(fileList.get(i) + "<BR>\r\n");
                 }
 
                 pout.print("<P>\r\n");
                 pout.print("<FORM METHOD=\"post\" ENCTYPE=\"multipart/form-data\" >\r\n");
 // the buttons go first so they get the 1st form part
-                pout.print("<BUTTON TYPE=\"submit\" VALUE=\"CONFIRMDELETE\" NAME=\"CONFIRMDELETE\">DELETE</BUTTON>\n");
-                pout.print("<BUTTON TYPE=\"submit\" VALUE=\"ABORTDELETE\" NAME=\"ABORTDELETE\">DON'T DELETE</BUTTON><P>\n");
+                pout.print("<BUTTON TYPE=\"submit\" VALUE=\"__CONFIRMDELETE\" NAME=\"__CONFIRMDELETE\">DELETE</BUTTON>\n");
+                pout.print("<BUTTON TYPE=\"submit\" VALUE=\"__ABORTDELETE\" NAME=\"__ABORTDELETE\">DON'T DELETE</BUTTON><P>\n");
 
-                for(int i = 1; i < fileList.size(); i++)
+// resend the file list
+                for(int i = 0; i < fileList.size(); i++)
                 {
                     pout.print("<INPUT HIDDEN=\"true\" TYPE=\"text\" id=\"a\" name=\"" + 
                         fileList.get(i) + 
-                        "\" value=\"" +
-                        fileList.get(i) + 
-                        "\">\r\n");
+                        "\" value=\"" + CHECKED + "\">\r\n");
                 }
 
                 pout.print("</FORM>\r\n");
 
             } catch(Exception e)
             {
-                Log.v("x", "WebServerThread.confirmDelete: " + e);
+                Log.i("WebServerThread", "confirmDelete: " + e);
             }
         }
 
-        public void confirmRename(String path, Vector<String> fileList, OutputStream out)
+        public void confirmRename(String path, OutputStream out, Vector<String> fileList)
         {
             try
             {
                 PrintStream pout = new PrintStream(out);
                 sendHeader(pout, "text/html");
                 pout.print("<B>Rename the following files in " + path + "?</B><P>\r\n");
-//                 for(int i = 1; i < fileList.size(); i++)
-//                 {
-//                     pout.print(fileList.get(i) + "<BR>\r\n");
-//                 }
-                
+
                 pout.print("<P>\r\n");
                 pout.print("<FORM METHOD=\"post\" ENCTYPE=\"multipart/form-data\" >\r\n");
 // the buttons go first so they get the 1st form part
-                pout.print("<BUTTON TYPE=\"submit\" VALUE=\"CONFIRMRENAME\" NAME=\"CONFIRMRENAME\">RENAME</BUTTON>\n");
-                pout.print("<BUTTON TYPE=\"submit\" VALUE=\"ABORTRENAME\" NAME=\"ABORTRENAME\">DON'T RENAME</BUTTON><P>\n");
-                for(int i = 1; i < fileList.size(); i++)
+                pout.print("<BUTTON TYPE=\"submit\" VALUE=\"__CONFIRMRENAME\" NAME=\"__CONFIRMRENAME\">RENAME</BUTTON>\n");
+                pout.print("<BUTTON TYPE=\"submit\" VALUE=\"__ABORTRENAME\" NAME=\"__ABORTRENAME\">DON'T RENAME</BUTTON><P>\n");
+                for(int i = 0; i < fileList.size(); i++)
                 {
                     pout.print(fileList.get(i) + 
                         " -> " +
@@ -703,30 +716,141 @@ public class WebServer extends Thread
                         fileList.get(i) + 
                         "\"><BR>\r\n");
                 }
-                
+
+// resend the file list
+                for(int i = 0; i < fileList.size(); i++)
+                {
+                    pout.print("<INPUT HIDDEN=\"true\" TYPE=\"text\" id=\"a\" name=\"" + 
+                        fileList.get(i) + 
+                        "\" value=\"" + CHECKED + "\">\r\n");
+                }
+
                 pout.print("</FORM>\r\n");
                 
             } catch(Exception e)
             {
-                Log.v("x", "WebServerThread.confirmRename: " + e);
+                Log.v("WebServerThread", "confirmRename: " + e);
             }
         }
 
-        public void renameFiles(String path, OutputStream out, Vector<String> fileList, Vector<String> dstList)
+        public void editFile(String path, 
+            OutputStream out, 
+            Vector<String> fileList,
+            boolean wroteIt)
+        {
+            Log.i("x", "WebServerThread.editFile");
+            
+            if(fileList.size() == 0)
+            {
+                PrintStream pout = new PrintStream(out);
+                errorReport(pout,
+                    connection,
+                    "555",
+                    "WebServerThread.editFile: SHIT",
+                    "No file selected for editing");
+                return;
+            }
+            
+            try
+            {
+                PrintStream pout = new PrintStream(out);
+                String completePath = path + "/" + fileList.get(0);
+                sendHeader(pout, "text/html");
+                pout.print("<B>Editing " + completePath + "</B><P>\r\n");
+            
+                pout.print("<FORM METHOD=\"post\" ENCTYPE=\"multipart/form-data\" >\r\n");
+// the buttons go first so they get the 1st form part
+                pout.print("<BUTTON TYPE=\"submit\" VALUE=\"__EDITSAVE\" NAME=\"__EDITSAVE\">SAVE</BUTTON>\n");
+                pout.print("<BUTTON TYPE=\"submit\" VALUE=\"__EDITQUIT\" NAME=\"__EDITQUIT\">QUIT</BUTTON><P>\n");
+//                pout.print("<BUTTON TYPE=\"submit\" VALUE=\"__EDITREVERT\" NAME=\"__EDITREVERT\">REVERT</BUTTON><P>\n");
+
+                pout.print("<TEXTAREA id=\"a\" name=\"__EDITTEXT\" + rows=\"24\" cols=\"80\" style=\"white-space: pre;\">\r\n");
+
+
+// print the file
+                InputStream file = new FileInputStream(completePath);
+                byte[] buffer = new byte[65536];
+                int size = file.available();
+                while (file.available() > 0)
+                    pout.write(buffer, 0, file.read(buffer));
+
+
+                pout.print("</TEXTAREA><BR>\r\n");
+
+
+// resend the file name
+                pout.print("<INPUT HIDDEN=\"true\" TYPE=\"text\" id=\"a\" name=\"" + 
+                    fileList.get(0) + 
+                    "\" value=\"" + CHECKED + "\">\r\n");
+
+                pout.print("</FORM><P>\r\n");
+
+                if(wroteIt)
+                {
+                    pout.print(size + " bytes written<P>\r\n");
+                }
+            } catch(Exception e)
+            {
+                Log.i("WebServerThread", "editFile: " + e);
+            }
+        }
+        
+        public void editSave(String path, 
+            OutputStream out, 
+            Vector<String> fileList,
+            String text)
+        {
+            Log.i("x", "WebServerThread.editSave");
+
+            boolean failed = false;
+            String newPath = path + "/" + fileList.get(0);
+            try {
+                OutputStream fd = new FileOutputStream(new File(newPath));
+                PrintStream pout = new PrintStream(fd);
+                pout.print(text);
+                pout.flush();
+            } catch(IOException e)
+            {
+                Log.i("WebServerThread", "doUpload: write FAILED " + e);
+                failed = true;
+            }
+
+            if(failed)
+            {
+// send the error
+                PrintStream pout = new PrintStream(out);
+                errorReport(pout,
+                        connection,
+                        "555",
+                        "WebServerThread.doUpload: SHIT",
+                        "Couldn't save the file " + newPath);
+            }
+            else
+            {
+                editFile(path, out, fileList, true);
+            }
+        }
+
+        public void renameFiles(String path, 
+            OutputStream out, 
+            Vector<String> fileList, 
+            Map<String, String> content)
         {
             PrintStream pout = new PrintStream(out);
             boolean failed = false;
-            Log.i("x", "WebServerThread.renameFiles 1");
-            for(int i = 1; i < fileList.size(); i++)
+            Log.i("WebServerThread", "renameFiles 1");
+            for(int i = 0; i < fileList.size(); i++)
             {
-                Log.i("x", "WebServerThread.renameFiles 2 " +
-                        fileList.get(i) +
-                        " -> " +
-                        dstList.get(i));
-                if(!fileList.get(i).equals(dstList.get(i)))
+                String oldName = fileList.get(i);
+                String newName = content.get(oldName);
+                if(!oldName.equals(newName))
                 {
-                    File oldFile = new File(path + "/" + fileList.get(i));
-                    File newFile = new File(path + "/" + dstList.get(i));
+                    File oldFile = new File(path + "/" + oldName);
+                    File newFile = new File(path + "/" + newName);
+                    Log.i("WebServerThread", "renameFiles 2 " +
+                            oldFile.getPath() +
+                            " -> " +
+                            newFile.getPath());
                     if(!oldFile.renameTo(newFile))
                     {
                         errorReport(pout, connection,
@@ -739,23 +863,49 @@ public class WebServer extends Thread
                 }
             }
 
+            Log.i("WebServerThread", "renameFiles 3 failed=" + failed);
             if(!failed)
             {
                 sendFiles(path, out);
             }
         }
 
-        public void moveFiles(String path, Vector<String> fileList, OutputStream out)
+        public void doMkdir(String path, 
+            OutputStream out, 
+            Map<String, String> content)
+        {
+            PrintStream pout = new PrintStream(out);
+            boolean failed = false;
+            File file = new File(path + "/" + content.get("__MKDIRPATH"));
+            Log.i("WebServerThread", "doMkdir " + file.getPath());
+
+            if(!file.mkdir())
+            {
+                errorReport(pout, 
+                    connection, 
+                    "555", 
+                    "WebServerThread.doMkdir: MKDIR FAILED",
+                    "Couldn't create the directory " + file.getPath());
+            }
+            else
+            {
+                sendFiles(path, out);
+            }
+        }
+
+        public void moveFiles(String path, 
+            OutputStream out, 
+            Vector<String> fileList,
+            String movePath)
         {
             boolean failed = false;
             PrintStream pout = new PrintStream(out);
-            String movePath = fileList.get(1);
 
-            for(int i = 2; i < fileList.size(); i++)
+            for(int i = 0; i < fileList.size(); i++)
             {
                 String srcPath = path + "/" + fileList.get(i);
                 String dstPath = movePath + "/" + fileList.get(i);
-                Log.i("x", "WebServerThread.moveFiles " + srcPath + " -> " + dstPath);
+                Log.i("WebServerThread", "moveFiles " + srcPath + " -> " + dstPath);
                 if(!srcPath.equals(dstPath))
                 {
                     File oldFile = new File(srcPath);
@@ -779,20 +929,23 @@ public class WebServer extends Thread
             }
         }
 
-        public void deleteFiles(String path, Vector<String> fileList, OutputStream out)
+        public void deleteFiles(String path, OutputStream out, Vector<String> fileList)
         {
             boolean failed = false;
             PrintStream pout = new PrintStream(out);
-            for(int i = 1; i < fileList.size(); i++)
+            for(int i = 0; i < fileList.size(); i++)
             {
                 String fullPath = path + "/" + fileList.get(i);
-                Log.i("x", "WebServerThread.deleteFiles " + fullPath);
+                Log.i("WebServerThread", "deleteFiles " + fullPath);
                 File f = new File(fullPath);
                 if(!f.delete())
                 {
                     // failed
                     failed = true;
-                    errorReport(pout, connection, "404", "WebServerThread.deleteFiles: FAILED",
+                    errorReport(pout, 
+                        connection, 
+                        "404", 
+                        "WebServerThread.deleteFiles: FAILED",
                         "Couldn't delete " + fullPath);
                     break;
                 }
@@ -804,416 +957,343 @@ public class WebServer extends Thread
             }
         }
 
-        public void handlePost(String path, OutputStream out, InputStream in)
+        public void doUpload(String path, 
+            OutputStream out,
+            Map<String, byte[]> files)
         {
-            final int GET_BOUNDARY = 1;
-            final int GET_START = 2;
-            final int GET_FILENAME = 3;
-            final int GET_MOVEPATH = 4;
-            final int GET_DATA = 5;
-            final int GET_TEXT = 6;
-            final int GET_EOF = 7;
-            int state = GET_BOUNDARY;
-            
-            final int DO_UNKNOWN = 0;
-            final int DO_DELETE = 1;
-            final int DO_CONFIRM_DELETE = 2;
-            final int DO_ABORT = 3;
-            final int DO_RENAME = 4;
-            final int DO_CONFIRM_RENAME = 5;
-            final int DO_MOVE = 6;
-            final int DO_CONFIRM_MOVE = 7;
-            final int DO_MKDIR = 8;
-            final int DO_UPLOAD = 9;
-            int operation = DO_UNKNOWN;
-
-            String filename = "";
-            String movePath = "";
             PrintStream pout = new PrintStream(out);
-            Vector<String> fileList = new Vector<String>();
-            Vector<String> dstList = new Vector<String>();
-            int totalFiles = 0;
-            boolean mkdirFailed = false;
-            boolean mkdirComplete = false;
-            boolean done = false;
-
-            try
+// save the files
+            boolean failed = false;
+            for(String key : files.keySet())
             {
-                String boundary = "";
-                while (!done)
+                String filename = key;
+                byte[] data = files.get(key);
+                String newPath = path + "/" + filename;
+
+                try {
+                    OutputStream fd = new FileOutputStream(new File(newPath));
+                    fd.write(data, 0, data.length);
+                    fd.close();
+                    fd = null;
+                } catch(IOException e)
                 {
-                    String misc = readLine(in);
-                    Log.i("x", "WebServerThread.handlePost state=" + state + " misc=" + misc);
-//                    if (misc.length() == 0)
-//                        break;
-
-                    switch (state)
-                    {
-
-                        case GET_FILENAME:
-                            if(misc.startsWith("Content-Disposition:"))
-                            {
-// the Content-Disposition changes based on the operation
-// Content-Disposition: form-data; name="DELETE"
-// Content-Disposition: form-data; name="UPLOAD"; filename="loadlines.png"
-                                if(operation == DO_UNKNOWN)
-                                {
-                                    int nameIndex = misc.indexOf("name=\"");
-                                    if(nameIndex >= 0)
-                                    {
-                                        String[] strings = misc.substring(nameIndex).split("\"");
-                                        Log.i("x", "WebServerThread.handlePost operation=" + strings[1]);
-                                        if(strings[1].equals("UPLOAD"))
-                                        {
-                                            operation = DO_UPLOAD;
-                                        }
-                                        else
-                                        if(strings[1].equals("DELETE"))
-                                        {
-                                            operation = DO_DELETE;
-                                        }
-                                        else
-                                        if(strings[1].equals("CONFIRMDELETE"))
-                                        {
-                                            operation = DO_CONFIRM_DELETE;
-                                        }
-                                        else
-                                        if(strings[1].equals("MKDIR"))
-                                        {
-                                            operation = DO_MKDIR;
-                                        }
-                                        else
-// text box containing the move path
-                                        if(strings[1].equals("MOVEPATH"))
-                                        {
-                                            state = GET_MOVEPATH;
-                                        }
-                                        else
-// the move button
-                                        if(strings[1].equals("MOVE"))
-                                        {
-                                            operation = DO_MOVE;
-                                        }
-                                        else
-                                        if(strings[1].equals("RENAME"))
-                                        {
-                                            operation = DO_RENAME;
-                                        }
-                                        else
-                                        if(strings[1].equals("CONFIRMRENAME"))
-                                        {
-                                            operation = DO_CONFIRM_RENAME;
-                                        }
-                                        else
-                                        if(strings[1].equals("CONFIRMMOVE"))
-                                        {
-                                            operation = DO_CONFIRM_MOVE;
-                                        }
-                                        else
-                                        if(strings[1].equals("ABORTRENAME") ||
-                                                strings[1].equals("ABORTMOVE") ||
-                                                strings[1].equals("ABORTDELETE"))
-                                        {
-                                            operation = DO_ABORT;
-                                        }
-                                    }
-                                }
-
-                                switch(operation)
-                                {
-                                    case DO_UPLOAD:
-                                    {
-                                        String[] strings = misc.split("filename=\"");
-                                        if (strings.length > 1)
-                                        {
-                                            strings = strings[1].split("\"");
-                                            //Log.i("x", "WebServerThread.handlePost strings=" + strings.length);
-
-                                            if (strings.length == 0)
-                                            {
-                                                Log.i("x", "WebServerThread.handlePost no files specified");
-
-                                                state = GET_START;
-                                            }
-                                            else
-                                            {
-                                                filename = strings[0];
-                                                Log.i("x", "WebServerThread.handlePost filename=" + filename);
-                                                state = GET_DATA;
-                                            }
-                                        }
-                                        else
-                                        {
-                                            // no filename given
-                                            Log.i("x", "WebServerThread.handlePost last file received");
-                                            state = GET_START;
-                                        }
-                                        break;
-                                    }
-
-                                    case DO_DELETE:
-                                    case DO_CONFIRM_DELETE:
-                                    case DO_RENAME:
-                                    case DO_CONFIRM_RENAME:
-                                    case DO_MOVE:
-                                    case DO_CONFIRM_MOVE:
-                                    {
-                                        String[] strings = misc.split("name=\"");
-                                        if(strings.length > 1)
-                                        {
-                                            strings = strings[1].split("\"");
-                                            if(strings.length > 0)
-                                            {
-                                                Log.i("x", "WebServerThread.handlePost GET_FILENAME name=" +
-                                                        strings[0]);
-                                                fileList.add(strings[0]);
-                                            }
-                                        }
-
-                                        if(operation == DO_CONFIRM_RENAME)
-                                        {
-                                            // destination directory is in the current data block
-                                            state = GET_TEXT;
-                                        }
-                                        else
-                                        {
-                                            state = GET_START;
-                                        }
-                                        break;
-                                    }
-
-                                    case DO_ABORT:
-                                        state = GET_START;
-                                        break;
-
-                                    case DO_MKDIR:
-// only get 1 filename
-                                        if(mkdirComplete)
-                                        {
-                                            state = GET_START;
-                                        }
-                                        else
-                                        {
-                                            state = GET_TEXT;
-                                        }
-                                        break;
-                                }
-                            }
-                            break;
-
-                        case GET_EOF:
-                            if(misc.contains(boundary + "--"))
-                            {
-                                done = true;
-                            }
-                            break;
-
-                        case GET_START:
-// end of the request
-                            if(misc.contains(boundary + "--"))
-                            {
-                                Log.i("x", "WebServerThread.handlePost GET_START 1");
-                                switch(operation)
-                                {
-                                    case DO_UPLOAD:
-                                        if(totalFiles == 0)
-                                        {
-                                            errorReport(pout, connection, "555", "WebServerThread.handlePost: SHIT",
-                                                    "No files were selected for uploading.");
-                                        }
-                                        else 
-                                        {
-// resend the directory
-                                            Log.i("x", "WebServerThread.handlePost GET_START 2");
-                                            sendFiles(path, out);
-                                        }
-                                        break;
-
-                                    case DO_MOVE:
-                                        Log.i("x", "WebServerThread.handlePost GET_START -> DO_MOVE file list:");
-                                        for(int i = 0; i < fileList.size(); i++)
-                                        {
-                                            Log.i("x", "WebServerThread.handlePost " + fileList.get(i));
-                                        }
-
-                                        confirmMove(path, movePath, fileList, out);
-                                        break;
-
-                                    case DO_CONFIRM_MOVE:
-                                        moveFiles(path, fileList, out);
-                                        break;
-
-                                    case DO_DELETE:
-                                        Log.i("x", "WebServerThread.handlePost GET_START -> DO_DELETE file list:");
-                                        for(int i = 0; i < fileList.size(); i++)
-                                        {
-                                            Log.i("x", "WebServerThread.handlePost " + fileList.get(i));
-                                        }
-                                        
-                                        confirmDelete(path, fileList, out);
-                                        break;
-                                    
-                                    case DO_CONFIRM_DELETE:
-                                        deleteFiles(path, fileList, out);
-                                        break;
-
-                                    case DO_MKDIR:
-                                        File file = new File(path + "/" + dstList.get(0));
-                                        if(!file.mkdir())
-                                        {
-                                            errorReport(pout, 
-                                                connection, 
-                                                "555", 
-                                                "WebServerThread.handlePost: MKDIR FAILED",
-                                                "Couldn't create the directory " + path + "/" + dstList.get(0));
-                                        }
-                                        else
-                                        {
-                                            sendFiles(path, out);
-                                        }
-                                        break;
-                                    
-                                    case DO_RENAME:
-                                        Log.i("x", "WebServerThread.handlePost GET_START -> DO_RENAME");
-                                        confirmRename(path, fileList, out);
-                                        break;
-                                    
-                                    default:
-                                    case DO_ABORT:
-                                        sendFiles(path, out);
-                                        break;
-                                }
-                                
-                                done = true;
-                                
-                            }
-                            else if(misc.contains(boundary))
-                            {
-                                state = GET_FILENAME;
-                            }
-                            break;
-
-                        case GET_MOVEPATH:
-                            Log.i("x", "WebServerThread.handlePost GET_MOVEPATH misc.length=" + misc.length());
-                            if(misc.length() == 0) {
-                                byte[] data = readUntil(boundary, in,false);
-                                movePath = new String(data, StandardCharsets.UTF_8);
-                                Log.i("x", "WebServerThread.handlePost GET_MOVEPATH path=" +
-                                    movePath);
-                                state = GET_FILENAME;
-                            }
-                            break;
-
-                        case GET_TEXT:
-                            Log.i("x", "WebServerThread.handlePost GET_TEXT misc.length=" + misc.length());
-                            if(misc.length() == 0)
-                            {
-                                byte[] data = readUntil(boundary, in,
-                                        operation == DO_CONFIRM_RENAME ||
-                                            operation == DO_MOVE);
-                                
-                                String s = new String(data, StandardCharsets.UTF_8);
-                                Log.i("x", "WebServerThread.handlePost GET_TEXT gotEOF=" +
-                                        gotEOF +
-                                        " path=" +
-                                        path +
-                                        " filename=" + s);
-                                dstList.add(s);
-
-                                mkdirComplete = true;
-                                // DO_RENAME gets its filenames in GET_FILENAME
-                                if(operation == DO_CONFIRM_RENAME)
-                                {
-                                    // DO_CONFIRM_RENAME gets its source filenames in GET_FILENAME &
-                                    // its destination filenames in GET_TEXT
-                                    // exits when the filename block ends in an extra --
-                                    if(gotEOF)
-                                    {
-                                        renameFiles(path, out, fileList, dstList);
-                                        done = true;
-                                    }
-                                    else {
-                                        // get the next filename
-                                        state = GET_FILENAME;
-                                    }
-                                }
-                                else
-                                {
-                                    state = GET_START;
-                                }
-                            }
-                            break;
-
-                        case GET_DATA:
-                            Log.i("x", "WebServerThread.handlePost GET_DATA misc.length=" + misc.length());
-                            // start of the data
-                            if(misc.length() == 0)
-                            {
-                                Log.i("x", "WebServerThread.handlePost GET_DATA 1");
-                                byte[] data = readUntil(boundary, in, false);
-                                Log.i("x", "WebServerThread.handlePost GET_DATA 2");
-
-                                // write the file
-                                String newPath = path + "/" + filename;
-                                Log.i("x", "WebServerThread.handlePost writing file to " + newPath);
-                                OutputStream fd;
-                                boolean failed = false;
-
-                                try {
-                                    fd = new FileOutputStream(new File(newPath));
-                                    fd.write(data, 0, data.length);
-                                    fd.close();
-                                    fd = null;
-                                } catch(IOException e)
-                                {
-                                    Log.i("x", "WebServerThread.handlePost: write failed " + e);
-                                    failed = true;
-                                }
-
-                                if(failed)
-                                {
-                                    // send the error
-                                    errorReport(pout,
-                                            connection,
-                                            "555",
-                                            "WebServerThread.handlePost: SHIT",
-                                            "Couldn't create the file " + newPath);
-                                    state = GET_EOF;
-                                }
-                                else {
-                                    totalFiles++;
-
-                                    // get the next file
-                                    state = GET_FILENAME;
-                                }
-                            }
-                            break;
-
-                        default:
-                        case GET_BOUNDARY:
-                            // get the boundary code
-                            if(misc.startsWith("Content-Type:"))
-                            {
-                                String[] strings = misc.split("boundary=");
-                                if (strings.length > 1)
-                                {
-                                    boundary = strings[1];
-                                    Log.i("x", "WebServerThread.handlePost boundary=" + strings[1]);
-                                    state = GET_START;
-                                }
-                            }
-                            break;
-
-                    }
+                    Log.i("WebServerThread", "doUpload: write FAILED " + e);
+                    failed = true;
                 }
 
-                Log.i("x", "WebServerThread.handlePost done");
+                if(failed)
+                {
+                    // send the error
+                    errorReport(pout,
+                            connection,
+                            "555",
+                            "WebServerThread.doUpload: SHIT",
+                            "Couldn't create the file " + newPath);
+                    break;
+                }
+            }
 
+// send the directory
+            if(!failed) sendFiles(path, out);
+        }
+
+// debugging.  Dump the post to ADB
+        public void dumpPost(String path, InputStream in)
+        {
+            Log.i("WebServerThread", "dumpPost path=" + path);
+            try
+            {
+                while(true)
+                {
+                    String text = readLine(in);
+                    if (text.length() == 0) break;
+                    Log.i("WebServerThread", "dumpPost text=" + text);
+                }
+                Log.i("WebServerThread", "dumpPost done");
             } catch(Exception e)
             {
-                Log.i("x", "WebServerThread.handlePost: " + e);
+                Log.i("WebServerThread", "dumpPost: " + e);
             }
         }
+
+
+        public String stripLinefeed(String x)
+        {
+            return x.replace("\n", "").replace("\r", "");
+        }
+
+        public String getBoundary(InputStream in)
+        {
+            while(true)
+            {
+                String text = readLine(in);
+                if(text.length() == 0)
+                {
+                    Log.i("WebServerThread", "getBoundary no boundary");
+                    return "";
+                }
+                
+                String[] strings = text.split("boundary=");
+                if(strings.length > 1)
+                {
+//                    Log.i("WebServerThread", "getBoundary " + strings[1]);
+                    return stripLinefeed(strings[1]);
+                }
+            }
+        }
+
+// return true if end of post
+        public boolean skipBoundary(String boundary, InputStream in)
+        {
+            while(true)
+            {
+                String text = readLine(in);
+                if(text.length() == 0)
+                {
+                    return true;
+                }
+                if(text.contains("--" + boundary + "--"))
+                {
+                    return true;
+                }
+                if(text.contains(boundary))
+                {
+                    return false;
+                }
+            }
+        }
+
+
+        public byte[] getData(String boundary, InputStream in)
+        {
+// boundary for data has extra starting bytes
+            byte[] boundary2 = new byte[boundary.length() + 4];
+            boundary2[0] = '\r';
+            boundary2[1] = '\n';
+            boundary2[2] = '-';
+            boundary2[3] = '-';
+            System.arraycopy(boundary.getBytes(), 0, boundary2, 4, boundary.getBytes().length);
+
+// skip Content-Type & empty line
+            String text = readLine(in);
+            if(text.contains("Content-Type:"))
+                readLine(in);
+            byte[] result = new byte[1024];
+            int offset = 0;
+// read until the terminating sequence
+            while(true)
+            {
+                int nextChar = readChar(in);
+// end of file
+                if(nextChar < 0)
+                    break;
+
+// expand the array
+                if(offset >= result.length)
+                {
+                    byte[] result2 = new byte[result.length * 2];
+                    System.arraycopy(result, 0, result2, 0, result.length);
+                    result = result2;
+                }
+                
+                result[offset++] = (byte)nextChar;
+
+// test for boundary
+                if(offset >= boundary2.length) {
+                    boolean gotIt = true;
+                    int fileEnd = offset - boundary2.length;
+                    for (int i = 0; i < boundary2.length; i++) {
+                        if (result[fileEnd + i] != boundary2[i]) {
+                            gotIt = false;
+                            break;
+                        }
+                    }
+
+// truncate the result & return it
+                    if(gotIt)
+                    {
+                        byte[] result2 = new byte[fileEnd];
+                        System.arraycopy(result, 0, result2, 0, fileEnd);
+                        return result2;
+                    }
+                }
+            }
+            return result;
+        }
+
+// returns the name & a filename if it exists
+        public Map<String, String> getContentDisposition(InputStream in)
+        {
+            Map<String, String> result = new HashMap<>();
+            result.put("filename", "");
+            result.put("name", "");
+
+            while(true)
+            {
+                String text = readLine(in);
+                if(text.length() == 0)
+                {
+                    Log.i("WebServerThread", "getContentDisposition EOF");
+                    return result;
+                }
+                if(text.startsWith("Content-Disposition:"))
+                {
+                    int filenameIndex = text.indexOf("filename=\"");
+                    if(filenameIndex >= 0)
+                    {
+                        String[] strings = text.substring(filenameIndex).split("\"");
+//Log.i("WebServerThread", "getContentDisposition filename=" + strings[1]);
+                        if(strings.length > 2)
+                            result.put("filename", strings[1]);
+                    }
+
+                    int nameIndex = text.indexOf("name=\"");
+                    if(nameIndex >= 0)
+                    {
+                        String[] strings = text.substring(nameIndex).split("\"");
+                        if(strings.length > 2)
+                            result.put("name", strings[1]);
+                    }
+                    return result;
+                }
+            }
+        }
+
+// returns the text value
+        public Map<String, String> getContentValue(String boundary, InputStream in)
+        {
+            Map<String, String> result = new HashMap<>();
+            String value = "";
+
+Log.i("WebServerThread", "getContentValue 1");
+// skip the 1st line
+            String line = readLine(in);
+//Log.i("WebServerThread", "getContentValue 2 text=" + text);
+
+// the value
+            while(true)
+            {
+                line = readLine(in);
+//Log.i("WebServerThread", "getContentValue 3 line=" + line);
+                if(!line.contains(boundary))
+                    value += line;
+                else
+                {
+// delete the last newline
+                    if(value.length() > 0 &&
+                        value.charAt(value.length() - 1) == '\n')
+                        value = value.substring(0, value.length() - 1);
+                    result.put("value", value);
+                    if(line.contains("--" + boundary + "--"))
+                        result.put("eof", "true");
+                    break;
+                }
+            }
+//Log.i("WebServerThread", "getContentValue 4 result=" + result);
+            return result;
+        }
+
+// convert the post into tables
+        public void handlePost(String path, OutputStream out, InputStream in)
+        {
+            String boundary = getBoundary(in);
+// read up to next boundary
+            skipBoundary(boundary, in);
+// make a table of all the content, uploaded files, & selected filenames
+            Map<String, String> content = new HashMap<>();
+            Vector<String> fileList = new Vector<String>();
+            Map<String, byte[]> files = new HashMap<>();
+            while(true)
+            {
+                Map<String, String> result = getContentDisposition(in);
+                String filename = result.get("filename");
+                String name = result.get("name");
+//                Log.i("WebServerThread", "handlePost name=" + name + " fileName=" + filename);
+
+                if(!name.equals(""))
+                {
+                    if(!filename.equals(""))
+                    {
+                        byte[] data = getData(boundary, in);
+                        files.put(filename, data);
+                    }
+                    else
+                    {
+                        result = getContentValue(boundary, in);
+//Log.i("WebServerThread", "handlePost name=" + name + " value=" + value);
+
+                        String value = result.get("value");
+                        boolean isEOF = result.get("eof") != null;
+                        if(value.equals(CHECKED))
+                            fileList.add(name);
+                        else
+                            content.put(name, value);
+
+                        if(isEOF) break;
+//                        if(skipBoundary(boundary, in))
+//                            break;
+                    }
+                }
+                else
+                    break;
+            }
+
+            Log.i("WebServerThread", "handlePost done");
+// print the key values
+            for (String key : content.keySet()) 
+                Log.i("WebServerThread", "handlePost key=" + key + " value=\"" + content.get(key) + "\"");
+// print all the filenames
+            for(int i = 0; i < fileList.size(); i++)
+                Log.i("WebServerThread", "handlePost selected file=" + fileList.get(i));
+// print all the data
+            for(String key : files.keySet())
+                Log.i("WebServerThread", "handlePost filename=" + key + 
+                    " length=" + files.get(key).length +
+                    " " + new String(files.get(key), StandardCharsets.UTF_8));
+
+
+// perform the operation
+//            Log.i("WebServerThread", "handlePost UPLOAD=" + content.get("UPLOAD"));
+            if(content.get("__MKDIR") != null)
+                doMkdir(path, out, content);
+            else
+            if(content.get("__UPLOAD") != null)
+                doUpload(path, out, files);
+            else
+            if(content.get("__DELETE") != null)
+                confirmDelete(path, out, fileList);
+            else
+            if(content.get("__MOVE") != null)
+                confirmMove(path, out, fileList, content.get("__MOVEPATH"));
+            else
+            if(content.get("__CONFIRMMOVE") != null)
+                moveFiles(path, out, fileList, content.get("__MOVEPATH"));
+            else
+            if(content.get("__CONFIRMDELETE") != null)
+                deleteFiles(path, out, fileList);
+            else
+            if(content.get("__RENAME") != null)
+                confirmRename(path, out, fileList);
+            else
+            if(content.get("__CONFIRMRENAME") != null)
+                renameFiles(path, out, fileList, content);
+            else
+            if(content.get("__EDIT") != null)
+                editFile(path, out, fileList, false);
+            else
+            if(content.get("__EDITSAVE") != null)
+                editSave(path, out, fileList, content.get("__EDITTEXT"));
+            else
+//             if(content.get("__EDITREVERT") != null)
+//                 editFile(path, out, fileList);
+//             else
+            if(content.get("__ABORTDELETE") != null ||
+                content.get("__ABORTRENAME") != null ||
+                content.get("__ABORTMOVE") != null ||
+                content.get("__EDITQUIT") != null)
+                sendFiles(path, out);
+        }
+
 
         public void run()
         {
@@ -1259,12 +1339,14 @@ public class WebServer extends Thread
                                     //Log.i("x", "WebServerThread.run 1");
 
                                     String line = readLine(in);
-                                    //Log.i("x", "WebServerThread.run 2 line=" + line.length());
-                                    if(line.length() == 0)
+                                    Log.i("WebServerThread", "run 2 line=" + line);
+                                    if(line.length() == 0 ||
+                                        line.charAt(0) == '\n')
                                     {
                                         break;
                                     }
                                 }
+                                Log.i("WebServerThread", "run 3 done");
 
                                 sendFiles(path, out);
                             }
@@ -1272,6 +1354,7 @@ public class WebServer extends Thread
 // handle a form
                             if (request.startsWith("POST")) 
                             {
+//                                dumpPost(path, in);
                                 handlePost(path, out, in);
                             }
 //                        }

@@ -2,8 +2,8 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/WebPhone.iml" filepath="$PROJECT_DIR$/WebPhone.iml" group="WebPhone" />
-      <module fileurl="file://$PROJECT_DIR$/app/app.iml" filepath="$PROJECT_DIR$/app/app.iml" group="WebPhone/app" />
+      <module fileurl="file://$PROJECT_DIR$/WebPhone.iml" filepath="$PROJECT_DIR$/WebPhone.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/app/WebPhone.app.iml" filepath="$PROJECT_DIR$/.idea/modules/app/WebPhone.app.iml" />
     </modules>
   </component>
 </project>
