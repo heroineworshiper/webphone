@@ -738,7 +738,7 @@ public class WebServer extends Thread
             Vector<String> fileList,
             boolean wroteIt)
         {
-            Log.i("x", "WebServerThread.editFile");
+            Log.i("WebServerThread", "editFile");
             
             if(fileList.size() == 0)
             {
@@ -753,42 +753,101 @@ public class WebServer extends Thread
             
             try
             {
-                PrintStream pout = new PrintStream(out);
                 String completePath = path + "/" + fileList.get(0);
-                sendHeader(pout, "text/html");
-                pout.print("<B>Editing " + completePath + "</B><P>\r\n");
-            
-                pout.print("<FORM METHOD=\"post\" ENCTYPE=\"multipart/form-data\" >\r\n");
-// the buttons go first so they get the 1st form part
-                pout.print("<BUTTON TYPE=\"submit\" VALUE=\"__EDITSAVE\" NAME=\"__EDITSAVE\">SAVE</BUTTON>\n");
-                pout.print("<BUTTON TYPE=\"submit\" VALUE=\"__EDITQUIT\" NAME=\"__EDITQUIT\">QUIT</BUTTON><P>\n");
-//                pout.print("<BUTTON TYPE=\"submit\" VALUE=\"__EDITREVERT\" NAME=\"__EDITREVERT\">REVERT</BUTTON><P>\n");
-
-                pout.print("<TEXTAREA id=\"a\" name=\"__EDITTEXT\" + rows=\"24\" cols=\"80\" style=\"white-space: pre;\">\r\n");
-
-
-// print the file
                 InputStream file = new FileInputStream(completePath);
                 byte[] buffer = new byte[65536];
                 int size = file.available();
+
+
+                PrintStream pout = new PrintStream(out);
+                sendHeader(pout, "text/html");
+
+                pout.print(
+                    "<style>\n" +
+                    "    html, body {\n" +
+                    "        height: 100%;\n" +
+                    "        margin: 0;\n" +
+                    "        padding: 0;\n" +
+                    "    }\n" +
+                    "    .top {\n" +
+                    "        height: auto;\n" +
+                    "    }\n" +
+                    "    .bottom {\n" +
+                    "        height: auto;\n" +
+                    "    }\n" +
+                    "    .container {\n" +
+                    "        display: flex;\n" +
+                    "        flex-direction: column;\n" +
+                    "        height: 100%;\n" +
+                    "    }\n" +
+                    "    textarea {\n" +
+                    "        flex: 1;\n" +
+                    "        resize: none; /* Optional: prevent resizing */\n" +
+                    "        width: 100%;\n" +
+                    "        height: 100%;\n" +
+                    "        box-sizing: border-box;\n" +
+                    "        white-space: pre;\n" +
+                    "    }\n" +
+                    "</style>\n" +
+                    
+                    
+                    "<script>\n" +
+                    "    // Function to save the scroll position of the textarea\n" +
+                    "    function saveScrollPosition() {\n" +
+                    "        var textarea = document.getElementById('a');\n" +
+                    "        sessionStorage.setItem('scrollPosition', textarea.scrollTop);\n" +
+                    "    }\n" +
+                    "\n" +
+                    "    // Function to restore the scroll position of the textarea\n" +
+                    "    function restoreScrollPosition() {\n" +
+                    "        var scrollPosition = sessionStorage.getItem('scrollPosition');\n" +
+                    "        if (scrollPosition !== null) {\n" +
+                    "            var textarea = document.getElementById('a');\n" +
+                    "            textarea.scrollTop = scrollPosition;\n" +
+                    "        }\n" +
+                    "    }\n" +
+                    "\n" +
+                    "    // Call the function to restore scroll position after the page has loaded\n" +
+                    "    window.onload = restoreScrollPosition;\n" +
+                    "</script>\n" +
+                    
+                    "\n" +
+                    "<BODY>\n" +
+                    "<FORM CLASS=\"container\" METHOD=\"post\" ENCTYPE=\"multipart/form-data\" >\n" +
+                    "<DIV CLASS=\"top\">"
+                );
+                
+                
+                pout.print("<B>Editing " + completePath + "</B><BR>\r\n");
+                pout.print("CR's have been stripped<BR>\n");
+                if(wroteIt)
+                {
+                    pout.print(size + " bytes written<BR>\r\n");
+                }
+                pout.print("<BUTTON TYPE=\"submit\" VALUE=\"__EDITSAVE\" NAME=\"__EDITSAVE\">SAVE</BUTTON>\n");
+//                pout.print("<BUTTON TYPE=\"submit\" VALUE=\"__EDITREVERT\" NAME=\"__EDITREVERT\">REVERT</BUTTON>\n");
+                pout.print("</DIV>\n");
+
+                pout.print("<TEXTAREA id=\"a\" name=\"__EDITTEXT\"  onscroll=\"saveScrollPosition()\" style=\"white-space: pre;\">\r\n");
+
+
+// print the file
                 while (file.available() > 0)
                     pout.write(buffer, 0, file.read(buffer));
 
 
-                pout.print("</TEXTAREA><BR>\r\n");
+                pout.print("</TEXTAREA>\r\n");
+                
+                pout.print("<DIV CLASS=\"bottom\">\n");
 
+                pout.print("<BUTTON TYPE=\"submit\" VALUE=\"__EDITQUIT\" NAME=\"__EDITQUIT\">QUIT</BUTTON><BR>\n");
 
 // resend the file name
                 pout.print("<INPUT HIDDEN=\"true\" TYPE=\"text\" id=\"a\" name=\"" + 
                     fileList.get(0) + 
                     "\" value=\"" + CHECKED + "\">\r\n");
 
-                pout.print("</FORM><P>\r\n");
-
-                if(wroteIt)
-                {
-                    pout.print(size + " bytes written<P>\r\n");
-                }
+                pout.print("</DIV>\n</FORM>\r\n");
             } catch(Exception e)
             {
                 Log.i("WebServerThread", "editFile: " + e);
@@ -800,7 +859,7 @@ public class WebServer extends Thread
             Vector<String> fileList,
             String text)
         {
-            Log.i("x", "WebServerThread.editSave");
+            Log.i("WebServerThread", "editSave");
 
             boolean failed = false;
             String newPath = path + "/" + fileList.get(0);
