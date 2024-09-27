@@ -1,6 +1,6 @@
 /*
  * WEBPHONE
- * Copyright (C) 2020 Adam Williams <broadcast at earthling dot net>
+ * Copyright (C) 2020-2024 Adam Williams <broadcast at earthling dot net>
  * 
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,6 +27,7 @@ import android.app.AlarmManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.os.Environment;
 import android.os.IBinder;
 import android.os.SystemClock;
@@ -64,6 +65,27 @@ public class Stuff extends Service
 		Intent serviceIntent = new Intent(activity, Stuff.class);
 		activity.startService(serviceIntent);
         stuff.activity = activity;
+
+		SharedPreferences file = null;
+		file = activity.getSharedPreferences("webphone", 0);
+		sortOrder = file.getInt("sortOrder", SORT_PATH);
+        int descending = file.getInt("descending", 0);
+        if(descending == 0)
+            Stuff.sortDescending = false;
+        else
+            Stuff.sortDescending = true;
+    }
+
+    static void saveDefaults()
+    {
+		SharedPreferences file2 = null;
+		SharedPreferences.Editor file = null;
+		file2 = activity.getSharedPreferences("webphone", 0);
+		file = file2.edit();
+		
+		file.putInt("sortOrder", sortOrder);
+		file.putInt("descending", sortDescending ? 1 : 0);
+		file.commit();
     }
 
 	@Override

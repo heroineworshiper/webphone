@@ -137,6 +137,10 @@ public class WebServer extends Thread
                 msg);
     }
 
+    private static String getTheURL(Socket connection)
+    {
+        return connection.getLocalAddress().getHostName() + ":" + connection.getLocalPort();
+    }
 
     private static void errorReport(PrintStream pout, Socket connection,
                                     String code, String title, String msg)
@@ -147,9 +151,7 @@ public class WebServer extends Thread
                 "<TITLE>" + code + " " + title + "</TITLE>\r\n" +
                 "</HEAD><BODY>\r\n" +
                 "<H1>" + title + "</H1>\r\n" + msg + "<P>\r\n" +
-                "<HR><ADDRESS>Webphone at " +
-                connection.getLocalAddress().getHostName() +
-                " Port " + connection.getLocalPort() + "</ADDRESS>\r\n" +
+                "<HR><ADDRESS>Webphone at " + getTheURL(connection) + "</ADDRESS>\r\n" +
                 "</BODY></HTML>\r\n");
         log(connection, code + " " + title);
     }
@@ -231,7 +233,7 @@ public class WebServer extends Thread
                 }
                 else
                 {
-                    return 0;
+                    return -1;
                 }
             }
             else
@@ -242,7 +244,7 @@ public class WebServer extends Thread
                 }
                 else
                 {
-                    return 0;
+                    return -1;
                 }
             }
         }
@@ -263,7 +265,7 @@ public class WebServer extends Thread
                 }
                 else
                 {
-                    return 0;
+                    return -1;
                 }
             }
             else
@@ -274,7 +276,7 @@ public class WebServer extends Thread
                 }
                 else
                 {
-                    return 0;
+                    return -1;
                 }
             }
         }
@@ -443,6 +445,46 @@ public class WebServer extends Thread
         }
 
 
+        public String sortButton(int field, String path)
+        {
+            final String[] sortText = 
+            {
+                "path", "PATH", 
+                "size", "SIZE", 
+                "date", "DATE" 
+            };
+            String result = "<TD><B>";
+            String directionText;
+            if(Stuff.sortOrder == field)
+            {
+                if(Stuff.sortDescending) 
+                    directionText = "_0";
+                else
+                    directionText = "_1";
+            }
+            else
+            {
+                if(Stuff.sortDescending) 
+                    directionText = "_1";
+                else
+                    directionText = "_0";
+            }
+            result += "<A HREF=\"" + path + 
+                "?sort_" + field + 
+                directionText + "\">";
+            if(Stuff.sortOrder == field)
+            {
+                result += sortText[field * 2 + 1];
+            }
+            else
+            {
+                result += sortText[field * 2];
+            }
+
+            result += "</A></TD>\r\n";
+            return result;
+        }
+
 // send the big directory listing or a single file
         public void sendFiles(String path, OutputStream out)
         {
@@ -468,13 +510,16 @@ public class WebServer extends Thread
 // TODO: sort by date, name, & size
                         switch (Stuff.sortOrder) {
                             case Stuff.SORT_SIZE:
+                                //Log.i("WebServerThread", "sendFiles SORT_SIZE");
                                 Arrays.sort(files, new SortBySize());
                                 break;
                             case Stuff.SORT_DATE:
+                                //Log.i("WebServerThread", "sendFiles SORT_DATE");
                                 Arrays.sort(files, new SortByDate());
                                 break;
                             default:
                             case Stuff.SORT_PATH:
+                                //Log.i("WebServerThread", "sendFiles SORT_PATH");
                                 Arrays.sort(files, new SortByName());
                                 break;
                         }
@@ -509,6 +554,15 @@ public class WebServer extends Thread
                         pout.print("<BUTTON TYPE=\"submit\" VALUE=\"__EDIT\" NAME=\"__EDIT\">EDIT</BUTTON>\n");
                         pout.print("<TABLE>\r\n");
 
+// create the sort options
+                        pout.print("<TR>\r\n");
+                        pout.print(sortButton(Stuff.SORT_SIZE, path));
+                        pout.print(sortButton(Stuff.SORT_DATE, path));
+                        pout.print(sortButton(Stuff.SORT_PATH, path));
+
+                        pout.print("</TR>\r\n");
+                        pout.print("<TR><TD style=\"height: 1px;\" bgcolor=\"000000\" COLSPAN=3></TD></TR>\r\n");
+
                         // create the .. entry
                         if (!path.equals("/")) {
                             String truncated = path;
@@ -522,9 +576,9 @@ public class WebServer extends Thread
                             String urlText = "<A HREF=\"" +
                                     truncated +
                                     "\">";
-                            pout.print("<TR><TD><B></B></TD><TD></TD><TD><B>" +
+                            pout.print("<TR><TD></TD><TD></TD><TD>" +
                                     urlText +
-                                    "..</B></TD></TR>\r\n");
+                                    "<B>..</B></TD></TR>\r\n");
                         }
 
                         for (int i = 0; i < files.length; i++)
@@ -580,7 +634,9 @@ public class WebServer extends Thread
                     else
                     {
                         errorReport(pout, connection, "404", "WebServerThread.sendFiles: SHIT",
-                                "Couldn't access that directory.");
+                                "Couldn't access that directory.  " +
+                                "How about going to this award winning page:<P>" +
+                                "<A HREF=\"http://" + getTheURL(connection) + "/sdcard" + "\">" + getTheURL(connection) + "/sdcard" + "</A>");
 
                     }
                 }
@@ -1377,10 +1433,25 @@ Log.i("WebServerThread", "getContentValue 1");
                         Log.i("x", "WebServerThread.run request=" + request + " req=" + req);
 
 // extract the path name
-//                        if (req.startsWith("/get?")) {
                             String path = req;
-//                            int end = path.indexOf('?');
-//                            if (end >= 0) path = path.substring(end + 1);
+// handle a sort command.  Android doesn't allow ? in regular filenames
+                            int sort_index = path.indexOf('?');
+                            if(sort_index >= 0)
+                            {
+                                String sort_command = path.substring(sort_index + 1);
+                                path = path.substring(0, sort_index);
+                                Log.i("x", "WebServerThread.run 1 sort_command=" + sort_command);
+                                if(sort_command.substring(0, 4).equals("sort"))
+                                {
+                                    Stuff.sortOrder = Integer.valueOf(sort_command.substring(5, 6));
+                                    int descending = Integer.valueOf(sort_command.substring(7, 8));
+                                    if(descending == 0)
+                                        Stuff.sortDescending = false;
+                                    else
+                                        Stuff.sortDescending = true;
+                                    Stuff.saveDefaults();
+                                }
+                            }
 
                             // strip ending /
                             while (path.length() > 1 &&
