@@ -345,10 +345,12 @@ public class WebServer extends Thread
         String readLine(BufferedInputStream in)
         {
             StringBuilder result = new StringBuilder();
+//            int total_read = 0;
 
             while(true)
             {
                 int c = readChar(in);
+//                total_read += 1;
 
                 if(c < 0)
                 {
@@ -366,7 +368,7 @@ public class WebServer extends Thread
                 }
             }
 
-//            Log.i("WebServerThread", "readLine text=" + result.toString());
+//            Log.i("WebServerThread", "readLine total_read=" + total_read);
             return result.toString();
         }
 
@@ -1128,18 +1130,23 @@ Log.i("WebServerThread", "doUpload: renaming " + tempPath + " to " + newPath);
             if(!failed) sendFiles(path, out);
         }
 
-// debugging.  Dump the post to ADB
+// debugging.  Dump the post to a file
         public void dumpPost(String path, BufferedInputStream in)
         {
             Log.i("WebServerThread", "dumpPost path=" + path);
             try
             {
+                BufferedOutputStream output = new BufferedOutputStream(
+                    new FileOutputStream(
+                        new File("/sdcard/debug")));
+                byte[] buffer = new byte[65536];
                 while(true)
                 {
-                    String text = readLine(in);
-                    if (text.length() == 0) break;
-                    Log.i("WebServerThread", "dumpPost text=" + text);
+                    int read_result = in.read(buffer, 0, buffer.length);
+                    if(read_result <= 0) break;
+                    output.write(buffer, 0, read_result);
                 }
+                output.close();
                 Log.i("WebServerThread", "dumpPost done");
             } catch(Exception e)
             {
@@ -1197,7 +1204,7 @@ Log.i("WebServerThread", "doUpload: renaming " + tempPath + " to " + newPath);
 
         public boolean getData(String boundary, BufferedInputStream in, BufferedOutputStream out)
         {
-// boundary for data has extra starting bytes
+// boundary for data has 4 extra starting bytes
             byte[] boundary2 = new byte[boundary.length() + 4];
             boundary2[0] = '\r';
             boundary2[1] = '\n';
@@ -1220,7 +1227,9 @@ Log.i("WebServerThread", "doUpload: renaming " + tempPath + " to " + newPath);
             {
 // mark the current position
                 int maxRead = fifo.length - fifo_size;
-                in.mark(maxRead);
+                in.mark(fifo.length);
+// start of the read in the fifo
+                int read_start = fifo_size;
                 try
                 {
                     read_result = in.read(fifo, fifo_size, maxRead);
@@ -1258,6 +1267,7 @@ Log.i("WebServerThread", "doUpload: renaming " + tempPath + " to " + newPath);
                     else
                     {
                         score = 0;
+                        if(fifo[i] == boundary2[0]) score = 1;
                     }
                 }
 
@@ -1266,7 +1276,16 @@ Log.i("WebServerThread", "doUpload: renaming " + tempPath + " to " + newPath);
 // rewind the input to the end of the boundary, as if we read 1 character at a time
                     try {
                         in.reset();
-                        in.skip(boundaryEnd);
+// skip length of the last read up to the end of the boundary
+                        in.skip(boundaryEnd - read_start);
+
+// DEBUG: print future data                        
+// in.mark(1024);
+// StringBuilder test = new StringBuilder();
+// for(int i = 0; i < 16; i++) test.append(" " + readChar(in));
+// in.reset();
+// Log.i("WebServerThread", "getData test=" + test.toString());
+
                     } catch(IOException e) 
                     {
                         Log.e("WebServerThread", "getData: in can't rewind 1");
@@ -1335,7 +1354,7 @@ Log.i("WebServerThread", "doUpload: renaming " + tempPath + " to " + newPath);
             {
                 String text = readLine(in);
 //Log.i("WebServerThread", "getContentDisposition text=" + text + 
-//    " boundary=" + boundary);
+//" boundary=" + boundary);
                 if(text.length() == 0 ||
                     text.contains("--" + boundary + "--"))
                 {
@@ -1344,6 +1363,7 @@ Log.i("WebServerThread", "doUpload: renaming " + tempPath + " to " + newPath);
                 }
                 if(text.startsWith("Content-Disposition:"))
                 {
+Log.i("WebServerThread", "getContentDisposition text=" + text);
                     int filenameIndex = text.indexOf("filename=\"");
                     if(filenameIndex >= 0)
                     {
@@ -1413,13 +1433,17 @@ Log.i("WebServerThread", "doUpload: renaming " + tempPath + " to " + newPath);
 
             while(true)
             {
-//Log.i("WebServerThread", "handlePost 1");
+Log.i("WebServerThread", "handlePost 1");
                 Map<String, String> result = getContentDisposition(in, boundary);
                 String filename = result.get("filename");
                 String name = result.get("name");
                 String decodedFilename = Html.fromHtml(filename).toString();
-                
-//Log.i("WebServerThread", "handlePost name=" + name + " decodedFilename=" + decodedFilename);
+
+Log.i("WebServerThread", "handlePost 2");
+for (String key : result.keySet()) 
+Log.i("WebServerThread", "handlePost key=" + key + " value=\"" + result.get(key) + "\"");
+
+Log.i("WebServerThread", "handlePost name=" + name + " decodedFilename=" + decodedFilename);
 
                 if(!name.equals(""))
                 {
@@ -1445,7 +1469,6 @@ Log.i("WebServerThread", "handlePost saving temp to " + tempPath);
                             if(getData(boundary, in, output))
                                 error = true;
 
-Log.i("WebServerThread", "handlePost 2");
 
                             try {
                                 output.close();
