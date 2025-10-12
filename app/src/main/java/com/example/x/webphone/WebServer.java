@@ -23,6 +23,8 @@ package com.example.x.webphone;
 
 import android.annotation.SuppressLint;
 import android.os.Build;
+import android.text.Html;
+import android.text.SpannableString;
 import android.util.Log;
 
 import java.io.BufferedOutputStream;
@@ -33,12 +35,15 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.BufferedInputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.lang.reflect.Array;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.URLDecoder;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystemLoopException;
 import java.nio.file.FileSystems;
@@ -54,6 +59,7 @@ import java.util.Hashtable;
 import java.util.Map;
 import java.util.Vector;
 import java.util.concurrent.Semaphore;
+import java.util.UUID;
 
 
 // Started from http://cs.au.dk/~amoeller/WWW/javaweb/server.html
@@ -63,7 +69,6 @@ public class WebServer extends Thread
     int TOTAL_THREADS = 20;
     WebServerThread threads[] = new WebServerThread[TOTAL_THREADS];
     final String CHECKED = "__CHECKED";
-
 
     public void run()
     {
@@ -322,7 +327,7 @@ public class WebServer extends Thread
 
         // read the input stream
         // returns -1 at the EOF
-        int readChar(InputStream in)
+        int readChar(BufferedInputStream in)
         {
             int result = -1;
             try
@@ -337,13 +342,14 @@ public class WebServer extends Thread
         }
 
         // read the input stream until the next newline
-        String readLine(InputStream in)
+        String readLine(BufferedInputStream in)
         {
             StringBuilder result = new StringBuilder();
 
             while(true)
             {
                 int c = readChar(in);
+
                 if(c < 0)
                 {
                     Log.i("WebServerThread", "readLine c=" + c);
@@ -366,7 +372,7 @@ public class WebServer extends Thread
 
 
         boolean gotEOF = false;
-        byte[] readUntil(String text, InputStream in, boolean testEOF)
+        byte[] readUntil(String text, BufferedInputStream in, boolean testEOF)
         {
             byte[] textBytes = text.getBytes();
             byte[] endBuf = new byte[text.length() + 4];
@@ -485,14 +491,34 @@ public class WebServer extends Thread
             return result;
         }
 
+// convert Linux filename to HTML escape codes
+// HTML & URLEncoder classes didn't work.
+        public String encodeHtml(String in)
+        {
+            StringBuilder htmlEncodedName = new StringBuilder();
+            for(char c : in.toCharArray())
+            {
+                int code = (int)c;
+                if(code >= 128) 
+                {
+                    htmlEncodedName.append("&#" + code + ";");
+                }
+                else
+                    htmlEncodedName.append(c);
+            }
+            return htmlEncodedName.toString();
+        }
+
 // send the big directory listing or a single file
         public void sendFiles(String path, OutputStream out)
         {
             try
             {
                 PrintStream pout = new PrintStream(out);
-                Log.i("WebServerThread", "sendFiles 1 path=" + path);
-                File f = new File(path);
+                String decodedPath = URLDecoder.decode(path, StandardCharsets.UTF_8.toString());
+                Log.i("WebServerThread", "sendFiles 1 path=" + path + 
+                    " decodedPath=" + decodedPath);
+                File f = new File(decodedPath);
                 if (f.isDirectory())
                 {
                     // send the directory listing
@@ -525,7 +551,7 @@ public class WebServer extends Thread
                         }
 
                         sendHeader(pout, "text/html");
-                        pout.print("<B>Index of " + path + "</B><P>\r\n");
+                        pout.print("<B>Index of " + decodedPath + "</B><P>\r\n");
                         pout.print("<A HREF=\"" + path + "\"> <B>RELOAD </B></A><BR>\r\n");
 
 // must always encode in multipart data in case the filename has a ?
@@ -589,8 +615,14 @@ public class WebServer extends Thread
                             formattedDate = sdf.format(files[i].date);
 
                             String filenameText = files[i].name;
+                            String htmlEncodedName = encodeHtml(filenameText);
+                            String htmlEncodedPath = encodeHtml(files[i].path);
+
+Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
+    " htmlEncodedName=" + htmlEncodedName.toString());
+
                             String linkText = "<A HREF=\"" +
-                                    files[i].path +
+                                    htmlEncodedPath +
                                     "\">";
                             String textBegin = linkText;
 
@@ -601,7 +633,7 @@ public class WebServer extends Thread
 
                                 if (isSymlink(files[i].path)) {
                                     File file = new File(files[i].path);
-                                    filenameText = files[i].name +
+                                    filenameText = htmlEncodedName +
                                             "/ -> " +
                                             file.getCanonicalPath();
                                 }
@@ -619,10 +651,10 @@ public class WebServer extends Thread
                                     formattedDate +
                                 "</TD><TD>" +
                                     "<INPUT TYPE=\"checkbox\" ID=\"a\" NAME=\"" + 
-                                    files[i].name + 
+                                    htmlEncodedName + 
                                     "\" VALUE=\"" + CHECKED + "\">" +
                                     textBegin +
-                                    filenameText +
+                                    htmlEncodedName +
                                 "</TD></TR>\r\n"
                             );
                         }
@@ -645,8 +677,8 @@ public class WebServer extends Thread
                     // send the file
                     try {
                         // send file
-                        InputStream file = new FileInputStream(path);
-                        sendHeader(pout, guessContentType(path));
+                        InputStream file = new FileInputStream(decodedPath);
+                        sendHeader(pout, guessContentType(decodedPath));
                         sendFile(file, out); // send raw file
                         log(connection, "200 OK");
                     } catch (FileNotFoundException e) {
@@ -675,17 +707,17 @@ public class WebServer extends Thread
                 String fullDst = "";
                 if(movePath.startsWith("/"))
                 {
-                    fullDst = movePath;
+                    fullDst = encodeHtml(movePath);
                 }
                 else
                 {
-                    fullDst = path + "/" + movePath;
+                    fullDst = encodeHtml(path + "/" + movePath);
                 }
 
                 pout.print("<B>Really move the following files to " + fullDst + "?</B><P>\r\n");
                 for(int i = 0; i < fileList.size(); i++)
                 {
-                    pout.print(fileList.get(i) + "<BR>\r\n");
+                    pout.print(encodeHtml(fileList.get(i)) + "<BR>\r\n");
                 }
 
                 pout.print("<P>\r\n");
@@ -701,7 +733,7 @@ public class WebServer extends Thread
                 for(int i = 0; i < fileList.size(); i++)
                 {
                     pout.print("<INPUT HIDDEN=\"true\" TYPE=\"text\" id=\"a\" name=\"" +
-                            fileList.get(i) +
+                            encodeHtml(fileList.get(i)) +
                             "\" value=\"" + CHECKED + "\">\r\n");
                 }
 
@@ -724,7 +756,7 @@ public class WebServer extends Thread
                 for(int i = 0; i < fileList.size(); i++)
                 {
 //Log.i("WebServerThread", "confirmDelete file=" + fileList.get(i));
-                    pout.print(fileList.get(i) + "<BR>\r\n");
+                    pout.print(encodeHtml(fileList.get(i)) + "<BR>\r\n");
                 }
 
                 pout.print("<P>\r\n");
@@ -737,7 +769,7 @@ public class WebServer extends Thread
                 for(int i = 0; i < fileList.size(); i++)
                 {
                     pout.print("<INPUT HIDDEN=\"true\" TYPE=\"text\" id=\"a\" name=\"" + 
-                        fileList.get(i) + 
+                        encodeHtml(fileList.get(i)) + 
                         "\" value=\"" + CHECKED + "\">\r\n");
                 }
 
@@ -764,20 +796,22 @@ public class WebServer extends Thread
                 pout.print("<BUTTON TYPE=\"submit\" VALUE=\"__ABORTRENAME\" NAME=\"__ABORTRENAME\">DON'T RENAME</BUTTON><P>\n");
                 for(int i = 0; i < fileList.size(); i++)
                 {
-                    pout.print(fileList.get(i) + 
+                    String htmlEncoded = encodeHtml(fileList.get(i));
+                    pout.print(htmlEncoded + 
                         " -> " +
                         "<INPUT TYPE=\"text\" id=\"a\" name=\"" +
-                        fileList.get(i) + 
+                        htmlEncoded + 
                         "\" value=\"" +
-                        fileList.get(i) + 
+                        htmlEncoded + 
                         "\"><BR>\r\n");
                 }
 
 // resend the file list
                 for(int i = 0; i < fileList.size(); i++)
                 {
+                    String htmlEncoded = encodeHtml(fileList.get(i));
                     pout.print("<INPUT HIDDEN=\"true\" TYPE=\"text\" id=\"a\" name=\"" + 
-                        fileList.get(i) + 
+                        htmlEncoded + 
                         "\" value=\"" + CHECKED + "\">\r\n");
                 }
 
@@ -874,7 +908,7 @@ public class WebServer extends Thread
                 );
                 
                 
-                pout.print("<B>Editing " + completePath + "</B><BR>\r\n");
+                pout.print("<B>Editing " + encodeHtml(completePath) + "</B><BR>\r\n");
                 pout.print("CR's have been stripped<BR>\n");
                 if(wroteIt)
                 {
@@ -900,7 +934,7 @@ public class WebServer extends Thread
 
 // resend the file name
                 pout.print("<INPUT HIDDEN=\"true\" TYPE=\"text\" id=\"a\" name=\"" + 
-                    fileList.get(0) + 
+                    encodeHtml(fileList.get(0)) + 
                     "\" value=\"" + CHECKED + "\">\r\n");
 
                 pout.print("</DIV>\n</FORM>\r\n");
@@ -926,7 +960,7 @@ public class WebServer extends Thread
                 pout.flush();
             } catch(IOException e)
             {
-                Log.i("WebServerThread", "doUpload: write FAILED " + e);
+                Log.i("WebServerThread", "editSave: write FAILED " + e);
                 failed = true;
             }
 
@@ -937,8 +971,8 @@ public class WebServer extends Thread
                 errorReport(pout,
                         connection,
                         "555",
-                        "WebServerThread.doUpload: SHIT",
-                        "Couldn't save the file " + newPath);
+                        "WebServerThread.editSave: SHIT",
+                        "Couldn't save the file " + encodeHtml(newPath));
             }
             else
             {
@@ -1074,38 +1108,20 @@ public class WebServer extends Thread
 
         public void doUpload(String path, 
             OutputStream out,
-            Map<String, byte[]> files)
+            Map<String, String> files)
         {
             PrintStream pout = new PrintStream(out);
-// save the files
+// rename the temp files
             boolean failed = false;
             for(String key : files.keySet())
             {
                 String filename = key;
-                byte[] data = files.get(key);
+                String tempPath = files.get(key);
                 String newPath = path + "/" + filename;
-
-                try {
-                    OutputStream fd = new FileOutputStream(new File(newPath));
-                    fd.write(data, 0, data.length);
-                    fd.close();
-                    fd = null;
-                } catch(IOException e)
-                {
-                    Log.i("WebServerThread", "doUpload: write FAILED " + e);
-                    failed = true;
-                }
-
-                if(failed)
-                {
-                    // send the error
-                    errorReport(pout,
-                            connection,
-                            "555",
-                            "WebServerThread.doUpload: SHIT",
-                            "Couldn't create the file " + newPath);
-                    break;
-                }
+                File oldFile = new File(tempPath);
+                File newFile = new File(newPath);
+Log.i("WebServerThread", "doUpload: renaming " + tempPath + " to " + newPath);
+                oldFile.renameTo(newFile);
             }
 
 // send the directory
@@ -1113,7 +1129,7 @@ public class WebServer extends Thread
         }
 
 // debugging.  Dump the post to ADB
-        public void dumpPost(String path, InputStream in)
+        public void dumpPost(String path, BufferedInputStream in)
         {
             Log.i("WebServerThread", "dumpPost path=" + path);
             try
@@ -1137,7 +1153,7 @@ public class WebServer extends Thread
             return x.replace("\n", "").replace("\r", "");
         }
 
-        public String getBoundary(InputStream in)
+        public String getBoundary(BufferedInputStream in)
         {
             while(true)
             {
@@ -1158,7 +1174,7 @@ public class WebServer extends Thread
         }
 
 // return true if end of post
-        public boolean skipBoundary(String boundary, InputStream in)
+        public boolean skipBoundary(String boundary, BufferedInputStream in)
         {
             while(true)
             {
@@ -1179,7 +1195,7 @@ public class WebServer extends Thread
         }
 
 
-        public byte[] getData(String boundary, InputStream in)
+        public boolean getData(String boundary, BufferedInputStream in, BufferedOutputStream out)
         {
 // boundary for data has extra starting bytes
             byte[] boundary2 = new byte[boundary.length() + 4];
@@ -1189,55 +1205,127 @@ public class WebServer extends Thread
             boundary2[3] = '-';
             System.arraycopy(boundary.getBytes(), 0, boundary2, 4, boundary.getBytes().length);
 
+            byte[] fifo = new byte[65536];
+            int fifo_size = 0;
+
 // skip Content-Type & empty line
             String text = readLine(in);
             if(text.contains("Content-Type:"))
                 readLine(in);
-            byte[] result = new byte[1024];
-            int offset = 0;
+
 // read until the terminating sequence
-            while(true)
+            boolean error = false;
+            int read_result = 0;
+            while(!error)
             {
-                int nextChar = readChar(in);
-// end of file
-                if(nextChar < 0)
-                    break;
-
-// expand the array
-                if(offset >= result.length)
+// mark the current position
+                int maxRead = fifo.length - fifo_size;
+                in.mark(maxRead);
+                try
                 {
-                    byte[] result2 = new byte[result.length * 2];
-                    System.arraycopy(result, 0, result2, 0, result.length);
-                    result = result2;
+                    read_result = in.read(fifo, fifo_size, maxRead);
+                } catch(IOException e)
+                {
+                    Log.e("WebServerThread", "getData: read failed");
+                    error = true;
                 }
-                
-                result[offset++] = (byte)nextChar;
 
-// test for boundary
-                if(offset >= boundary2.length) {
-                    boolean gotIt = true;
-                    int fileEnd = offset - boundary2.length;
-                    for (int i = 0; i < boundary2.length; i++) {
-                        if (result[fileEnd + i] != boundary2[i]) {
-                            gotIt = false;
+// failed or EOF
+                if(error || read_result <= 0)
+                {
+                    Log.e("WebServerThread", "getData: EOF");
+                    return true;
+                }
+                fifo_size += read_result;
+
+// test fifo for boundary
+                int score = 0;
+                boolean gotBoundary = false;
+// end of boundary in the fifo buffer
+                int boundaryEnd = 0;
+                for(int i = 0; i < fifo_size; i++)
+                {
+                    if(fifo[i] == boundary2[score])
+                    {
+                        score++;
+                        if(score >= boundary2.length)
+                        {
+                            gotBoundary = true;
+                            boundaryEnd = i + 1;
                             break;
                         }
                     }
-
-// truncate the result & return it
-                    if(gotIt)
+                    else
                     {
-                        byte[] result2 = new byte[fileEnd];
-                        System.arraycopy(result, 0, result2, 0, fileEnd);
-                        return result2;
+                        score = 0;
+                    }
+                }
+
+                if(gotBoundary)
+                {
+// rewind the input to the end of the boundary, as if we read 1 character at a time
+                    try {
+                        in.reset();
+                        in.skip(boundaryEnd);
+                    } catch(IOException e) 
+                    {
+                        Log.e("WebServerThread", "getData: in can't rewind 1");
+                        error = true;
+                    }
+                    fifo_size = boundaryEnd;
+                }
+                else
+                {
+                    try {
+                        in.reset();
+                        in.skip(read_result);
+                    } catch(IOException e) 
+                    {
+                        Log.e("WebServerThread", "getData: in can't rewind 2");
+                        error = true;
+                    }
+                }
+
+//                 Log.e("WebServerThread", "getData: gotBoundary=" + gotBoundary +
+//                     " boundary2.length=" + boundary2.length +
+//                     " fifo_size=" + fifo_size);
+
+// at most, fifo_size less the boundary size can be written
+// if we didn't get the boundary, eat the 1st byte of the boundary size to advance
+// the scan window
+                int maxWrite = fifo_size - boundary2.length;
+                if(!gotBoundary) maxWrite += 1;
+                if(maxWrite > 0)
+                {
+                    try
+                    {
+                        out.write(fifo, 0, maxWrite);
+                    } catch(IOException e)
+                    {
+                        Log.e("WebServerThread", "getData: write failed");
+                        return true;
+                    }
+
+                    if(gotBoundary)
+                    {
+                        fifo_size = 0;
+                        break;
+                    }
+                    else
+                    {
+// drain the fifo
+                        System.arraycopy(fifo, maxWrite, fifo, 0, fifo_size - maxWrite);
+                        fifo_size -= maxWrite;
                     }
                 }
             }
-            return result;
+
+            return error;
         }
 
 // returns the name & a filename if it exists
-        public Map<String, String> getContentDisposition(InputStream in)
+        public Map<String, String> getContentDisposition(BufferedInputStream in,
+            String boundary)
         {
             Map<String, String> result = new HashMap<>();
             result.put("filename", "");
@@ -1246,7 +1334,10 @@ public class WebServer extends Thread
             while(true)
             {
                 String text = readLine(in);
-                if(text.length() == 0)
+//Log.i("WebServerThread", "getContentDisposition text=" + text + 
+//    " boundary=" + boundary);
+                if(text.length() == 0 ||
+                    text.contains("--" + boundary + "--"))
                 {
                     Log.i("WebServerThread", "getContentDisposition EOF");
                     return result;
@@ -1275,12 +1366,12 @@ public class WebServer extends Thread
         }
 
 // returns the text value
-        public Map<String, String> getContentValue(String boundary, InputStream in)
+        public Map<String, String> getContentValue(String boundary, BufferedInputStream in)
         {
             Map<String, String> result = new HashMap<>();
             String value = "";
 
-Log.i("WebServerThread", "getContentValue 1");
+//Log.i("WebServerThread", "getContentValue 1");
 // skip the 1st line
             String line = readLine(in);
 //Log.i("WebServerThread", "getContentValue 2 text=" + text);
@@ -1309,7 +1400,7 @@ Log.i("WebServerThread", "getContentValue 1");
         }
 
 // convert the post into tables
-        public void handlePost(String path, OutputStream out, InputStream in)
+        public void handlePost(String path, OutputStream out, BufferedInputStream in)
         {
             String boundary = getBoundary(in);
 // read up to next boundary
@@ -1317,28 +1408,76 @@ Log.i("WebServerThread", "getContentValue 1");
 // make a table of all the content, uploaded files, & selected filenames
             Map<String, String> content = new HashMap<>();
             Vector<String> fileList = new Vector<String>();
-            Map<String, byte[]> files = new HashMap<>();
+// map files to temp files
+            Map<String, String> files = new HashMap<>();
+
             while(true)
             {
-                Map<String, String> result = getContentDisposition(in);
+//Log.i("WebServerThread", "handlePost 1");
+                Map<String, String> result = getContentDisposition(in, boundary);
                 String filename = result.get("filename");
                 String name = result.get("name");
-//                Log.i("WebServerThread", "handlePost name=" + name + " fileName=" + filename);
+                String decodedFilename = Html.fromHtml(filename).toString();
+                
+//Log.i("WebServerThread", "handlePost name=" + name + " decodedFilename=" + decodedFilename);
 
                 if(!name.equals(""))
                 {
                     if(!filename.equals(""))
                     {
-                        byte[] data = getData(boundary, in);
-                        files.put(filename, data);
+// uploaded files have to be written to a temporary or we'll run out of memory
+                        String tempPath = path + "/.temp" + UUID.randomUUID();
+                        BufferedOutputStream output = null;
+                        boolean error = false;
+Log.i("WebServerThread", "handlePost saving temp to " + tempPath);
+
+                        try {
+                            output = new BufferedOutputStream(new FileOutputStream(new File(tempPath)));
+                        } catch(IOException e)
+                        {
+                            Log.i("WebServerThread", "handlePost: write FAILED " + e);
+                            error = true;
+                        }
+
+
+                        if(!error) 
+                        {
+                            if(getData(boundary, in, output))
+                                error = true;
+
+Log.i("WebServerThread", "handlePost 2");
+
+                            try {
+                                output.close();
+                            } catch(IOException e)
+                            {
+                            }
+                        }
+
+                        if(error)
+                        {
+                            PrintStream pout = new PrintStream(out);
+                            // send the error
+                            errorReport(pout,
+                                    connection,
+                                    "555",
+                                    "WebServerThread.doUpload: SHIT",
+                                    "Couldn't create the temp file " + tempPath);
+                            break;
+                        }
+                        else
+                        {
+                            files.put(decodedFilename, tempPath);
+                            content.put(name, decodedFilename);
+                        }
                     }
                     else
                     {
                         result = getContentValue(boundary, in);
-//Log.i("WebServerThread", "handlePost name=" + name + " value=" + value);
 
                         String value = result.get("value");
                         boolean isEOF = result.get("eof") != null;
+Log.i("WebServerThread", "handlePost name=" + name + " value=" + value);
                         if(value.equals(CHECKED))
                             fileList.add(name);
                         else
@@ -1363,8 +1502,7 @@ Log.i("WebServerThread", "getContentValue 1");
 // print all the data
             for(String key : files.keySet())
                 Log.i("WebServerThread", "handlePost filename=" + key + 
-                    " length=" + files.get(key).length +
-                    " " + new String(files.get(key), StandardCharsets.UTF_8));
+                    " temp file=" + files.get(key));
 
 
 // perform the operation
@@ -1419,7 +1557,7 @@ Log.i("WebServerThread", "getContentValue 1");
 
 
 					Log.v("WebServerThread", "run: running 1");
-                    InputStream in = connection.getInputStream();
+                    BufferedInputStream in = new BufferedInputStream(connection.getInputStream());
                     OutputStream out = new BufferedOutputStream(connection.getOutputStream());
 
 
