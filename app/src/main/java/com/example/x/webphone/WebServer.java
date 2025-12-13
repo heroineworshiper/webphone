@@ -40,6 +40,8 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.lang.reflect.Array;
+import java.net.Inet4Address;
+import java.net.Inet6Address;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.URLDecoder;
@@ -89,8 +91,11 @@ public class WebServer extends Thread
             try {
                 // wait for request
                 connection = socket.accept();
-                Log.v("WebServer", "run: got connection");
-                if(connection != null) startConnection(connection);
+                Log.i("WebServer", "run: got connection from %s" +
+                        connection.getInetAddress().toString() +
+                        " IPv4=" + (connection.getInetAddress() instanceof Inet4Address));
+                if(connection != null &&
+                    (connection.getInetAddress() instanceof Inet4Address)) startConnection(connection);
 
             } catch (IOException e)
             {
@@ -457,9 +462,9 @@ public class WebServer extends Thread
         {
             final String[] sortText = 
             {
-                "path", "PATH", 
-                "size", "SIZE", 
-                "date", "DATE" 
+                "path", "<B>PATH</B>", 
+                "size", "<B>SIZE</B>", 
+                "date", "<B>DATE</B>" 
             };
             String result = "<TD><B>";
             String directionText;
@@ -483,6 +488,10 @@ public class WebServer extends Thread
             if(Stuff.sortOrder == field)
             {
                 result += sortText[field * 2 + 1];
+                if(Stuff.sortDescending)
+                    result += "&#8593;";
+                else
+                    result += "&#8595;";
             }
             else
             {
@@ -580,6 +589,7 @@ public class WebServer extends Thread
                         pout.print("<BUTTON TYPE=\"submit\" VALUE=\"__DELETE\" NAME=\"__DELETE\">DELETE</BUTTON>\n");
                         pout.print("<BUTTON TYPE=\"submit\" VALUE=\"__RENAME\" NAME=\"__RENAME\">RENAME</BUTTON>\n");
                         pout.print("<BUTTON TYPE=\"submit\" VALUE=\"__EDIT\" NAME=\"__EDIT\">EDIT</BUTTON>\n");
+                        pout.print("<BUTTON TYPE=\"button\" onclick=\"selectAll()\">CHECK ALL</button>\n");
                         pout.print("<TABLE>\r\n");
 
 // create the sort options
@@ -591,7 +601,7 @@ public class WebServer extends Thread
                         pout.print("</TR>\r\n");
                         pout.print("<TR><TD style=\"height: 1px;\" bgcolor=\"000000\" COLSPAN=3></TD></TR>\r\n");
 
-                        // create the .. entry
+// create the .. entry
                         if (!path.equals("/")) {
                             String truncated = path;
                             int i = truncated.lastIndexOf('/');
@@ -606,7 +616,7 @@ public class WebServer extends Thread
                                     "\">";
                             pout.print("<TR><TD></TD><TD></TD><TD>" +
                                     urlText +
-                                    "<B>..</B></TD></TR>\r\n");
+                                    "<B>PARENT DIR</B></TD></TR>\r\n");
                         }
 
                         for (int i = 0; i < files.length; i++)
@@ -652,7 +662,7 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
                                     textBegin +
                                     formattedDate +
                                 "</TD><TD>" +
-                                    "<INPUT TYPE=\"checkbox\" ID=\"a\" NAME=\"" + 
+                                    "<INPUT TYPE=\"checkbox\" CLASS=\"item\" ID=\"a\" NAME=\"" + 
                                     htmlEncodedName + 
                                     "\" VALUE=\"" + CHECKED + "\">" +
                                     textBegin +
@@ -663,6 +673,21 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
 
                         pout.print("</TABLE>\r\n");
                         pout.print("</FORM>\r\n");
+                        pout.print(
+                            "<script>\n" +
+                            "    // Function to check/uncheck all checkboxes with class \"item\"\n" +
+                            "    function selectAll() {\n" +
+                            "        const checkboxes = document.querySelectorAll('.item');\n" +
+                            "        var checked = false;\n" +
+                            "        if(checkboxes.length > 0)\n" +
+                            "            checked = checkboxes[0].checked;\n" +
+                            "        checkboxes.forEach(checkbox => {\n" +
+                            "            checkbox.checked = !checked;\n" +
+                            "        });\n" +
+                            "    }\n" +
+                            "\n" +
+                            "</script>\n"
+                        );
 
                     }
                     else
