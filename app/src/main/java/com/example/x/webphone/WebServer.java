@@ -462,9 +462,9 @@ public class WebServer extends Thread
         {
             final String[] sortText = 
             {
-                "path", "<B>PATH</B>", 
-                "size", "<B>SIZE</B>", 
-                "date", "<B>DATE</B>" 
+                "path", "PATH", 
+                "size", "SIZE", 
+                "date", "DATE" 
             };
             String result = "<TD><B>";
             String directionText;
