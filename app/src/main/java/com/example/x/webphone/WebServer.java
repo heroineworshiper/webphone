@@ -192,12 +192,14 @@ public class WebServer extends Thread
             return "text/plain";
     }
 
-    void sendHeader(PrintStream pout, String contentType)
+    void sendHeader(PrintStream pout, String contentType, long size)
     {
         pout.print("HTTP/1.0 200 OK\r\n" +
-                "Content-Type: " + contentType + "\r\n" +
-                "Date: " + new Date() + "\r\n" +
-                "Server: Ultramap\r\n\r\n");
+                "Content-Type: " + contentType + "\r\n");
+        if(size > 0)
+            pout.print("Content-Length: " + size + "\r\n");
+        pout.print("Date: " + new Date() + "\r\n" +
+                "Server: WebPhone\r\n\r\n");
     }
 
 
@@ -561,7 +563,7 @@ public class WebServer extends Thread
                                 break;
                         }
 
-                        sendHeader(pout, "text/html");
+                        sendHeader(pout, "text/html", -1);
                         pout.print("<B>Index of " + decodedPath + "</B><P>\r\n");
                         pout.print("<A HREF=\"" + path + "\"> <B>RELOAD </B></A><BR>\r\n");
 
@@ -705,7 +707,7 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
                     try {
                         // send file
                         InputStream file = new FileInputStream(decodedPath);
-                        sendHeader(pout, guessContentType(decodedPath));
+                        sendHeader(pout, guessContentType(decodedPath), f.length());
                         sendFile(file, out); // send raw file
                         log(connection, "200 OK");
                     } catch (FileNotFoundException e) {
@@ -730,7 +732,7 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
             try
             {
                 PrintStream pout = new PrintStream(out);
-                sendHeader(pout, "text/html");
+                sendHeader(pout, "text/html", -1);
                 String fullDst = "";
                 if(movePath.startsWith("/"))
                 {
@@ -778,7 +780,7 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
             try
             {
                 PrintStream pout = new PrintStream(out);
-                sendHeader(pout, "text/html");
+                sendHeader(pout, "text/html", -1);
                 pout.print("<B>Really delete the following files in " + path + "?</B><P>\r\n");
                 for(int i = 0; i < fileList.size(); i++)
                 {
@@ -813,7 +815,7 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
             try
             {
                 PrintStream pout = new PrintStream(out);
-                sendHeader(pout, "text/html");
+                sendHeader(pout, "text/html", -1);
                 pout.print("<B>Rename the following files in " + path + "?</B><P>\r\n");
 
                 pout.print("<P>\r\n");
@@ -877,7 +879,7 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
 
 
                 PrintStream pout = new PrintStream(out);
-                sendHeader(pout, "text/html");
+                sendHeader(pout, "text/html", -1);
 
                 pout.print(
                     "<style>\n" +
