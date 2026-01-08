@@ -1,6 +1,6 @@
 /*
  * WEBPHONE
- * Copyright (C) 2020-2024 Adam Williams <broadcast at earthling dot net>
+ * Copyright (C) 2020-2026 Adam Williams <broadcast at earthling dot net>
  * 
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,6 +17,8 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  * 
  */
+
+// android compatability layer
 
 
 package com.example.x.webphone;
@@ -74,6 +76,11 @@ public class Stuff extends Service
             Stuff.sortDescending = false;
         else
             Stuff.sortDescending = true;
+    }
+
+    static void log(String x, String y)
+    {
+        Log.i(x, y);
     }
 
     static void saveDefaults()

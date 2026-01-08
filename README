@@ -31,6 +31,14 @@ manager, the server is gone.
 There are a few limitations.  It can't create any files or links.  It
 can't write to external storage.
 
+-----------------------------------------------------------
+A standalone version can be built for running it without android.
+
+/usr/local/jdk1.8.0_144/bin/javac Stuff.java WebServer.java DirEntry.java
+java -cp . com.example.x.webphone.Stuff
+
+
+
 
 
 

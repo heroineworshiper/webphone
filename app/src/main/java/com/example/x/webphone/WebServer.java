@@ -1,6 +1,6 @@
 /*
  * WEBPHONE
- * Copyright (C) 2020-2024 Adam Williams <broadcast at earthling dot net>
+ * Copyright (C) 2020-2026 Adam Williams <broadcast at earthling dot net>
  * 
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,12 +20,6 @@
 
 
 package com.example.x.webphone;
-
-import android.annotation.SuppressLint;
-import android.os.Build;
-import android.text.Html;
-import android.text.SpannableString;
-import android.util.Log;
 
 import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
@@ -79,10 +73,10 @@ public class WebServer extends Thread
         try {
             socket = new ServerSocket(Stuff.PORT);
         } catch (IOException e) {
-            Log.v("WebServer", "run: Could not start web server: " + e);
+            Stuff.log("WebServer", "run: Could not start web server: " + e);
         }
 
-        Log.v("WebServer", "run: started web server on port " + Stuff.PORT);
+        Stuff.log("WebServer", "run: started web server on port " + Stuff.PORT);
 
 
         // request handler loop
@@ -91,7 +85,7 @@ public class WebServer extends Thread
             try {
                 // wait for request
                 connection = socket.accept();
-                Log.i("WebServer", "run: got connection from %s" +
+                Stuff.log("WebServer", "run: got connection from " +
                         connection.getInetAddress().toString() +
                         " IPv4=" + (connection.getInetAddress() instanceof Inet4Address));
                 if(connection != null &&
@@ -99,7 +93,7 @@ public class WebServer extends Thread
 
             } catch (IOException e)
             {
-                Log.v("WebServer", "run: " + e);
+                Stuff.log("WebServer", "run: " + e);
             }
         }
     }
@@ -126,7 +120,7 @@ public class WebServer extends Thread
 
         if(thread == null)
         {
-            Log.v("WebServer", "startConnection: out of threads");
+            Stuff.log("WebServer", "startConnection: out of threads");
             return;
         }
 
@@ -137,7 +131,7 @@ public class WebServer extends Thread
 
     private static void log(Socket connection, String msg)
     {
-        Log.v("WebServer", "log: " +
+        Stuff.log("WebServer", "log: " +
 //        		new Date() +
 //        		" [" +
 //        		connection.getInetAddress().getHostAddress() +
@@ -211,7 +205,7 @@ public class WebServer extends Thread
                 out.write(buffer, 0, file.read(buffer));
         } catch (IOException e)
         {
-            Log.v("WebServer", "sendFile " + e);
+            Stuff.log("WebServer", "sendFile " + e);
         }
     }
 
@@ -361,7 +355,7 @@ public class WebServer extends Thread
 
                 if(c < 0)
                 {
-                    Log.i("WebServerThread", "readLine c=" + c);
+                    Stuff.log("WebServerThread", "readLine c=" + c);
                     break;
                 }
                 if(c == '\n')
@@ -375,7 +369,7 @@ public class WebServer extends Thread
                 }
             }
 
-//            Log.i("WebServerThread", "readLine total_read=" + total_read);
+//            Stuff.log("WebServerThread", "readLine total_read=" + total_read);
             return result.toString();
         }
 
@@ -399,7 +393,7 @@ public class WebServer extends Thread
 
 //            for(int i = 0; i < endBuf.length; i++)
 //            {
-//                Log.i("x", "WebServerThread.readUntil 1 " + endBuf[i]);
+//                Stuff.log("x", "WebServerThread.readUntil 1 " + endBuf[i]);
 //            }
             byte[] result = new byte[1024];
             int offset = 0;
@@ -408,7 +402,7 @@ public class WebServer extends Thread
             while(true)
             {
                 int nextChar = readChar(in);
-//                Log.i("x", "WebServerThread.readUntil 1 " + nextChar);
+//                Stuff.log("x", "WebServerThread.readUntil 1 " + nextChar);
                 if(nextChar < 0)
                 {
                     break;
@@ -439,7 +433,7 @@ public class WebServer extends Thread
                     {
                         byte[] result2 = new byte[fileEnd];
                         System.arraycopy(result, 0, result2, 0, fileEnd);
-//                        Log.i("x", "WebServerThread.readUntil 2");
+//                        Stuff.log("x", "WebServerThread.readUntil 2");
 
 // read 2 more characters to test for an EOF.  They'll be \r\n or --
                         if(testEOF) {
@@ -504,9 +498,9 @@ public class WebServer extends Thread
             return result;
         }
 
-// convert Linux filename to HTML escape codes
+// convert File argument to HTML escape codes
 // HTML & URLEncoder classes didn't work.
-        public String encodeHtml(String in)
+        public String encodeHtml(String in, boolean is_href)
         {
             StringBuilder htmlEncodedName = new StringBuilder();
             for(char c : in.toCharArray())
@@ -514,12 +508,73 @@ public class WebServer extends Thread
                 int code = (int)c;
                 if(code >= 128) 
                 {
-                    htmlEncodedName.append("&#" + code + ";");
+                    if(is_href)
+                    {
+// create % codes for A HREF
+                        try
+                        {
+                            htmlEncodedName.append(
+                                URLEncoder.encode(
+                                    Character.toString(c), 
+                                    "UTF_8"));
+                        } catch(Exception e) 
+                        {
+                        }
+                    }
+                    else
+                        htmlEncodedName.append("&#" + code + ";");
                 }
                 else
                     htmlEncodedName.append(c);
             }
             return htmlEncodedName.toString();
+        }
+
+// convert HTML &#...; codes to a File argument
+// android.text.Html.fromHtml is not portable
+        public String decodeHtml(String in)
+        {
+            StringBuilder decodedText = new StringBuilder();
+            final int GET_CODE1 = 0;
+            final int GET_CODE2 = 1;
+            final int GET_NUMBER = 2;
+            int state = GET_CODE1;
+            StringBuilder number = new StringBuilder();
+            for(char c : in.toCharArray())
+            {
+                int code = (int)c;
+                switch(state)
+                {
+                    case GET_CODE1:
+                        if(c == '&') 
+                            state = GET_CODE2;
+                        else
+                            decodedText.append(c);
+                        break;
+                    case GET_CODE2:
+                        if(c == '#') 
+                        {
+                            state = GET_NUMBER;
+                            number.setLength(0);
+                        }
+                        else
+                        {
+                            state = GET_CODE1;
+                            decodedText.append(c);
+                        }
+                        break;
+                    case GET_NUMBER:
+                        if(c == ';') 
+                        {
+                            state = GET_CODE1;
+                            decodedText.append((char)Integer.parseInt(number.toString()));
+                        }
+                        else
+                            number.append(c);
+                        break;
+                }   
+            }
+            return decodedText.toString();
         }
 
 // send the big directory listing or a single file
@@ -529,16 +584,16 @@ public class WebServer extends Thread
             {
                 PrintStream pout = new PrintStream(out);
                 String decodedPath = URLDecoder.decode(path, StandardCharsets.UTF_8.toString());
-                Log.i("WebServerThread", "sendFiles 1 path=" + path + 
+                Stuff.log("WebServerThread", "sendFiles 1 path=" + path + 
                     " decodedPath=" + decodedPath);
                 File f = new File(decodedPath);
                 if (f.isDirectory())
                 {
                     // send the directory listing
-                    Log.i("WebServerThread", "sendFiles 2 isDirectory CanonicalPath=" + f.getCanonicalPath());
+                    Stuff.log("WebServerThread", "sendFiles 2 isDirectory CanonicalPath=" + f.getCanonicalPath());
 
                     File[] mFileList = f.listFiles();
-                    Log.i("WebServerThread", "sendFiles 3 mFileList=" + mFileList);
+                    Stuff.log("WebServerThread", "sendFiles 3 mFileList=" + mFileList);
 
                     if (mFileList != null)
                     {
@@ -549,16 +604,16 @@ public class WebServer extends Thread
 // TODO: sort by date, name, & size
                         switch (Stuff.sortOrder) {
                             case Stuff.SORT_SIZE:
-                                //Log.i("WebServerThread", "sendFiles SORT_SIZE");
+                                //Stuff.log("WebServerThread", "sendFiles SORT_SIZE");
                                 Arrays.sort(files, new SortBySize());
                                 break;
                             case Stuff.SORT_DATE:
-                                //Log.i("WebServerThread", "sendFiles SORT_DATE");
+                                //Stuff.log("WebServerThread", "sendFiles SORT_DATE");
                                 Arrays.sort(files, new SortByDate());
                                 break;
                             default:
                             case Stuff.SORT_PATH:
-                                //Log.i("WebServerThread", "sendFiles SORT_PATH");
+                                //Stuff.log("WebServerThread", "sendFiles SORT_PATH");
                                 Arrays.sort(files, new SortByName());
                                 break;
                         }
@@ -611,7 +666,7 @@ public class WebServer extends Thread
                                 truncated = truncated.substring(0, i + 1);
                             }
 
-                            Log.i("WebServerThread", "sendFiles 2 truncated=" + truncated);
+                            Stuff.log("WebServerThread", "sendFiles 2 truncated=" + truncated);
 
                             String urlText = "<A HREF=\"" +
                                     truncated +
@@ -629,10 +684,10 @@ public class WebServer extends Thread
                             formattedDate = sdf.format(files[i].date);
 
                             String filenameText = files[i].name;
-                            String htmlEncodedName = encodeHtml(filenameText);
-                            String htmlEncodedPath = encodeHtml(files[i].path);
+                            String htmlEncodedName = encodeHtml(filenameText, false);
+                            String htmlEncodedPath = encodeHtml(files[i].path, true);
 
-Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
+Stuff.log("WebServerThread", "sendFiles HREF path=" + files[i].path +
     " htmlEncodedName=" + htmlEncodedName.toString());
 
                             String linkText = "<A HREF=\"" +
@@ -716,11 +771,11 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
                                 "The requested URL was not found on this server.");
                     }
                 }
-                Log.i("WebServerThread", "sendFiles 4 done");
+                Stuff.log("WebServerThread", "sendFiles 4 done");
                 pout.flush();
             } catch(Exception e)
             {
-                Log.v("WebServerThread", "sendFiles: " + e);
+                Stuff.log("WebServerThread", "sendFiles: " + e);
             }
         }
 
@@ -736,17 +791,17 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
                 String fullDst = "";
                 if(movePath.startsWith("/"))
                 {
-                    fullDst = encodeHtml(movePath);
+                    fullDst = encodeHtml(movePath, false);
                 }
                 else
                 {
-                    fullDst = encodeHtml(path + "/" + movePath);
+                    fullDst = encodeHtml(path + "/" + movePath, false);
                 }
 
                 pout.print("<B>Really move the following files to " + fullDst + "?</B><P>\r\n");
                 for(int i = 0; i < fileList.size(); i++)
                 {
-                    pout.print(encodeHtml(fileList.get(i)) + "<BR>\r\n");
+                    pout.print(encodeHtml(fileList.get(i), false) + "<BR>\r\n");
                 }
 
                 pout.print("<P>\r\n");
@@ -762,7 +817,7 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
                 for(int i = 0; i < fileList.size(); i++)
                 {
                     pout.print("<INPUT HIDDEN=\"true\" TYPE=\"text\" id=\"a\" name=\"" +
-                            encodeHtml(fileList.get(i)) +
+                            encodeHtml(fileList.get(i), false) +
                             "\" value=\"" + CHECKED + "\">\r\n");
                 }
 
@@ -770,13 +825,13 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
 
             } catch(Exception e)
             {
-                Log.v("x", "WebServerThread.confirmMove: " + e);
+                Stuff.log("x", "WebServerThread.confirmMove: " + e);
             }
         }
 
         public void confirmDelete(String path, OutputStream out, Vector<String> fileList)
         {
-//Log.i("WebServerThread", "confirmDelete fileList=" + fileList.size());
+//Stuff.log("WebServerThread", "confirmDelete fileList=" + fileList.size());
             try
             {
                 PrintStream pout = new PrintStream(out);
@@ -784,8 +839,8 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
                 pout.print("<B>Really delete the following files in " + path + "?</B><P>\r\n");
                 for(int i = 0; i < fileList.size(); i++)
                 {
-//Log.i("WebServerThread", "confirmDelete file=" + fileList.get(i));
-                    pout.print(encodeHtml(fileList.get(i)) + "<BR>\r\n");
+//Stuff.log("WebServerThread", "confirmDelete file=" + fileList.get(i));
+                    pout.print(encodeHtml(fileList.get(i), false) + "<BR>\r\n");
                 }
 
                 pout.print("<P>\r\n");
@@ -798,7 +853,7 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
                 for(int i = 0; i < fileList.size(); i++)
                 {
                     pout.print("<INPUT HIDDEN=\"true\" TYPE=\"text\" id=\"a\" name=\"" + 
-                        encodeHtml(fileList.get(i)) + 
+                        encodeHtml(fileList.get(i), false) + 
                         "\" value=\"" + CHECKED + "\">\r\n");
                 }
 
@@ -806,7 +861,7 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
 
             } catch(Exception e)
             {
-                Log.i("WebServerThread", "confirmDelete: " + e);
+                Stuff.log("WebServerThread", "confirmDelete: " + e);
             }
         }
 
@@ -825,7 +880,7 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
                 pout.print("<BUTTON TYPE=\"submit\" VALUE=\"__ABORTRENAME\" NAME=\"__ABORTRENAME\">DON'T RENAME</BUTTON><P>\n");
                 for(int i = 0; i < fileList.size(); i++)
                 {
-                    String htmlEncoded = encodeHtml(fileList.get(i));
+                    String htmlEncoded = encodeHtml(fileList.get(i), false);
                     pout.print(htmlEncoded + 
                         " -> " +
                         "<INPUT TYPE=\"text\" id=\"a\" name=\"" +
@@ -838,7 +893,7 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
 // resend the file list
                 for(int i = 0; i < fileList.size(); i++)
                 {
-                    String htmlEncoded = encodeHtml(fileList.get(i));
+                    String htmlEncoded = encodeHtml(fileList.get(i), false);
                     pout.print("<INPUT HIDDEN=\"true\" TYPE=\"text\" id=\"a\" name=\"" + 
                         htmlEncoded + 
                         "\" value=\"" + CHECKED + "\">\r\n");
@@ -848,7 +903,7 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
                 
             } catch(Exception e)
             {
-                Log.v("WebServerThread", "confirmRename: " + e);
+                Stuff.log("WebServerThread", "confirmRename: " + e);
             }
         }
 
@@ -857,7 +912,7 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
             Vector<String> fileList,
             boolean wroteIt)
         {
-            Log.i("WebServerThread", "editFile");
+            Stuff.log("WebServerThread", "editFile");
             
             if(fileList.size() == 0)
             {
@@ -937,7 +992,7 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
                 );
                 
                 
-                pout.print("<B>Editing " + encodeHtml(completePath) + "</B><BR>\r\n");
+                pout.print("<B>Editing " + encodeHtml(completePath, false) + "</B><BR>\r\n");
                 pout.print("CR's have been stripped<BR>\n");
                 if(wroteIt)
                 {
@@ -963,13 +1018,13 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
 
 // resend the file name
                 pout.print("<INPUT HIDDEN=\"true\" TYPE=\"text\" id=\"a\" name=\"" + 
-                    encodeHtml(fileList.get(0)) + 
+                    encodeHtml(fileList.get(0), false) + 
                     "\" value=\"" + CHECKED + "\">\r\n");
 
                 pout.print("</DIV>\n</FORM>\r\n");
             } catch(Exception e)
             {
-                Log.i("WebServerThread", "editFile: " + e);
+                Stuff.log("WebServerThread", "editFile: " + e);
             }
         }
         
@@ -978,7 +1033,7 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
             Vector<String> fileList,
             String text)
         {
-            Log.i("WebServerThread", "editSave");
+            Stuff.log("WebServerThread", "editSave");
 
             boolean failed = false;
             String newPath = path + "/" + fileList.get(0);
@@ -989,7 +1044,7 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
                 pout.flush();
             } catch(IOException e)
             {
-                Log.i("WebServerThread", "editSave: write FAILED " + e);
+                Stuff.log("WebServerThread", "editSave: write FAILED " + e);
                 failed = true;
             }
 
@@ -1001,7 +1056,7 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
                         connection,
                         "555",
                         "WebServerThread.editSave: SHIT",
-                        "Couldn't save the file " + encodeHtml(newPath));
+                        "Couldn't save the file " + encodeHtml(newPath, false));
             }
             else
             {
@@ -1016,7 +1071,7 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
         {
             PrintStream pout = new PrintStream(out);
             boolean failed = false;
-            Log.i("WebServerThread", "renameFiles 1");
+            Stuff.log("WebServerThread", "renameFiles 1");
             for(int i = 0; i < fileList.size(); i++)
             {
                 String oldName = fileList.get(i);
@@ -1025,7 +1080,7 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
                 {
                     File oldFile = new File(path + "/" + oldName);
                     File newFile = new File(path + "/" + newName);
-                    Log.i("WebServerThread", "renameFiles 2 " +
+                    Stuff.log("WebServerThread", "renameFiles 2 " +
                             oldFile.getPath() +
                             " -> " +
                             newFile.getPath());
@@ -1041,7 +1096,7 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
                 }
             }
 
-            Log.i("WebServerThread", "renameFiles 3 failed=" + failed);
+            Stuff.log("WebServerThread", "renameFiles 3 failed=" + failed);
             if(!failed)
             {
                 sendFiles(path, out);
@@ -1055,7 +1110,7 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
             PrintStream pout = new PrintStream(out);
             boolean failed = false;
             File file = new File(path + "/" + content.get("__MKDIRPATH"));
-            Log.i("WebServerThread", "doMkdir " + file.getPath());
+            Stuff.log("WebServerThread", "doMkdir " + file.getPath());
 
             if(!file.mkdir())
             {
@@ -1083,7 +1138,7 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
             {
                 String srcPath = path + "/" + fileList.get(i);
                 String dstPath = movePath + "/" + fileList.get(i);
-                Log.i("WebServerThread", "moveFiles " + srcPath + " -> " + dstPath);
+                Stuff.log("WebServerThread", "moveFiles " + srcPath + " -> " + dstPath);
                 if(!srcPath.equals(dstPath))
                 {
                     File oldFile = new File(srcPath);
@@ -1114,7 +1169,7 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
             for(int i = 0; i < fileList.size(); i++)
             {
                 String fullPath = path + "/" + fileList.get(i);
-                Log.i("WebServerThread", "deleteFiles " + fullPath);
+                Stuff.log("WebServerThread", "deleteFiles " + fullPath);
                 File f = new File(fullPath);
                 if(!f.delete())
                 {
@@ -1149,7 +1204,7 @@ Log.i("WebServerThread", "sendFiles HREF path=" + files[i].path +
                 String newPath = path + "/" + filename;
                 File oldFile = new File(tempPath);
                 File newFile = new File(newPath);
-Log.i("WebServerThread", "doUpload: renaming " + tempPath + " to " + newPath);
+Stuff.log("WebServerThread", "doUpload: renaming " + tempPath + " to " + newPath);
                 oldFile.renameTo(newFile);
             }
 
@@ -1160,7 +1215,7 @@ Log.i("WebServerThread", "doUpload: renaming " + tempPath + " to " + newPath);
 // debugging.  Dump the post to a file
         public void dumpPost(String path, BufferedInputStream in)
         {
-            Log.i("WebServerThread", "dumpPost path=" + path);
+            Stuff.log("WebServerThread", "dumpPost path=" + path);
             try
             {
                 BufferedOutputStream output = new BufferedOutputStream(
@@ -1174,10 +1229,10 @@ Log.i("WebServerThread", "doUpload: renaming " + tempPath + " to " + newPath);
                     output.write(buffer, 0, read_result);
                 }
                 output.close();
-                Log.i("WebServerThread", "dumpPost done");
+                Stuff.log("WebServerThread", "dumpPost done");
             } catch(Exception e)
             {
-                Log.i("WebServerThread", "dumpPost: " + e);
+                Stuff.log("WebServerThread", "dumpPost: " + e);
             }
         }
 
@@ -1194,14 +1249,14 @@ Log.i("WebServerThread", "doUpload: renaming " + tempPath + " to " + newPath);
                 String text = readLine(in);
                 if(text.length() == 0)
                 {
-                    Log.i("WebServerThread", "getBoundary no boundary");
+                    Stuff.log("WebServerThread", "getBoundary no boundary");
                     return "";
                 }
                 
                 String[] strings = text.split("boundary=");
                 if(strings.length > 1)
                 {
-//                    Log.i("WebServerThread", "getBoundary " + strings[1]);
+//                    Stuff.log("WebServerThread", "getBoundary " + strings[1]);
                     return stripLinefeed(strings[1]);
                 }
             }
@@ -1262,14 +1317,14 @@ Log.i("WebServerThread", "doUpload: renaming " + tempPath + " to " + newPath);
                     read_result = in.read(fifo, fifo_size, maxRead);
                 } catch(IOException e)
                 {
-                    Log.e("WebServerThread", "getData: read failed");
+                    Stuff.log("WebServerThread", "getData: read failed");
                     error = true;
                 }
 
 // failed or EOF
                 if(error || read_result <= 0)
                 {
-                    Log.e("WebServerThread", "getData: EOF");
+                    Stuff.log("WebServerThread", "getData: EOF");
                     return true;
                 }
                 fifo_size += read_result;
@@ -1311,11 +1366,11 @@ Log.i("WebServerThread", "doUpload: renaming " + tempPath + " to " + newPath);
 // StringBuilder test = new StringBuilder();
 // for(int i = 0; i < 16; i++) test.append(" " + readChar(in));
 // in.reset();
-// Log.i("WebServerThread", "getData test=" + test.toString());
+// Stuff.log("WebServerThread", "getData test=" + test.toString());
 
                     } catch(IOException e) 
                     {
-                        Log.e("WebServerThread", "getData: in can't rewind 1");
+                        Stuff.log("WebServerThread", "getData: in can't rewind 1");
                         error = true;
                     }
                     fifo_size = boundaryEnd;
@@ -1327,12 +1382,12 @@ Log.i("WebServerThread", "doUpload: renaming " + tempPath + " to " + newPath);
                         in.skip(read_result);
                     } catch(IOException e) 
                     {
-                        Log.e("WebServerThread", "getData: in can't rewind 2");
+                        Stuff.log("WebServerThread", "getData: in can't rewind 2");
                         error = true;
                     }
                 }
 
-//                 Log.e("WebServerThread", "getData: gotBoundary=" + gotBoundary +
+//                 Stuff.log("WebServerThread", "getData: gotBoundary=" + gotBoundary +
 //                     " boundary2.length=" + boundary2.length +
 //                     " fifo_size=" + fifo_size);
 
@@ -1348,7 +1403,7 @@ Log.i("WebServerThread", "doUpload: renaming " + tempPath + " to " + newPath);
                         out.write(fifo, 0, maxWrite);
                     } catch(IOException e)
                     {
-                        Log.e("WebServerThread", "getData: write failed");
+                        Stuff.log("WebServerThread", "getData: write failed");
                         return true;
                     }
 
@@ -1380,22 +1435,22 @@ Log.i("WebServerThread", "doUpload: renaming " + tempPath + " to " + newPath);
             while(true)
             {
                 String text = readLine(in);
-//Log.i("WebServerThread", "getContentDisposition text=" + text + 
+//Stuff.log("WebServerThread", "getContentDisposition text=" + text + 
 //" boundary=" + boundary);
                 if(text.length() == 0 ||
                     text.contains("--" + boundary + "--"))
                 {
-                    Log.i("WebServerThread", "getContentDisposition EOF");
+                    Stuff.log("WebServerThread", "getContentDisposition EOF");
                     return result;
                 }
                 if(text.startsWith("Content-Disposition:"))
                 {
-Log.i("WebServerThread", "getContentDisposition text=" + text);
+Stuff.log("WebServerThread", "getContentDisposition text=" + text);
                     int filenameIndex = text.indexOf("filename=\"");
                     if(filenameIndex >= 0)
                     {
                         String[] strings = text.substring(filenameIndex).split("\"");
-//Log.i("WebServerThread", "getContentDisposition filename=" + strings[1]);
+//Stuff.log("WebServerThread", "getContentDisposition filename=" + strings[1]);
                         if(strings.length > 2)
                             result.put("filename", strings[1]);
                     }
@@ -1418,16 +1473,16 @@ Log.i("WebServerThread", "getContentDisposition text=" + text);
             Map<String, String> result = new HashMap<>();
             String value = "";
 
-//Log.i("WebServerThread", "getContentValue 1");
+//Stuff.log("WebServerThread", "getContentValue 1");
 // skip the 1st line
             String line = readLine(in);
-//Log.i("WebServerThread", "getContentValue 2 text=" + text);
+//Stuff.log("WebServerThread", "getContentValue 2 text=" + text);
 
 // the value
             while(true)
             {
                 line = readLine(in);
-//Log.i("WebServerThread", "getContentValue 3 line=" + line);
+//Stuff.log("WebServerThread", "getContentValue 3 line=" + line);
                 if(!line.contains(boundary))
                     value += line;
                 else
@@ -1442,7 +1497,7 @@ Log.i("WebServerThread", "getContentDisposition text=" + text);
                     break;
                 }
             }
-//Log.i("WebServerThread", "getContentValue 4 result=" + result);
+//Stuff.log("WebServerThread", "getContentValue 4 result=" + result);
             return result;
         }
 
@@ -1460,17 +1515,22 @@ Log.i("WebServerThread", "getContentDisposition text=" + text);
 
             while(true)
             {
-Log.i("WebServerThread", "handlePost 1");
+//Stuff.log("WebServerThread", "handlePost 1");
                 Map<String, String> result = getContentDisposition(in, boundary);
                 String filename = result.get("filename");
                 String name = result.get("name");
-                String decodedFilename = Html.fromHtml(filename).toString();
+//                String decodedFilename = Html.fromHtml(filename).toString();
+                String decodedFilename = decodeHtml(filename);
 
-Log.i("WebServerThread", "handlePost 2");
+
+Stuff.log("WebServerThread", "handlePost filename=" + filename + " decodedFilename=" + decodedFilename);
+
+//for(int i = 0; i < decodedFilename.length(); i++)
+//Stuff.log("WebServerThread", "i=" + i + " c=" + (int)decodedFilename.charAt(i));
+
 for (String key : result.keySet()) 
-Log.i("WebServerThread", "handlePost key=" + key + " value=\"" + result.get(key) + "\"");
+Stuff.log("WebServerThread", "handlePost key=" + key + " value=\"" + result.get(key) + "\"");
 
-Log.i("WebServerThread", "handlePost name=" + name + " decodedFilename=" + decodedFilename);
 
                 if(!name.equals(""))
                 {
@@ -1480,13 +1540,13 @@ Log.i("WebServerThread", "handlePost name=" + name + " decodedFilename=" + decod
                         String tempPath = path + "/.temp" + UUID.randomUUID();
                         BufferedOutputStream output = null;
                         boolean error = false;
-Log.i("WebServerThread", "handlePost saving temp to " + tempPath);
+Stuff.log("WebServerThread", "handlePost saving temp to " + tempPath);
 
                         try {
                             output = new BufferedOutputStream(new FileOutputStream(new File(tempPath)));
                         } catch(IOException e)
                         {
-                            Log.i("WebServerThread", "handlePost: write FAILED " + e);
+                            Stuff.log("WebServerThread", "handlePost: write FAILED " + e);
                             error = true;
                         }
 
@@ -1527,9 +1587,9 @@ Log.i("WebServerThread", "handlePost saving temp to " + tempPath);
 
                         String value = result.get("value");
                         boolean isEOF = result.get("eof") != null;
-Log.i("WebServerThread", "handlePost name=" + name + " value=" + value);
+Stuff.log("WebServerThread", "handlePost name=" + name + " value=" + value);
                         if(value.equals(CHECKED))
-                            fileList.add(name);
+                            fileList.add(decodeHtml(name));
                         else
                             content.put(name, value);
 
@@ -1542,21 +1602,21 @@ Log.i("WebServerThread", "handlePost name=" + name + " value=" + value);
                     break;
             }
 
-            Log.i("WebServerThread", "handlePost done");
+            Stuff.log("WebServerThread", "handlePost done");
 // print the key values
             for (String key : content.keySet()) 
-                Log.i("WebServerThread", "handlePost key=" + key + " value=\"" + content.get(key) + "\"");
+                Stuff.log("WebServerThread", "handlePost key=" + key + " value=\"" + content.get(key) + "\"");
 // print all the filenames
             for(int i = 0; i < fileList.size(); i++)
-                Log.i("WebServerThread", "handlePost selected file=" + fileList.get(i));
+                Stuff.log("WebServerThread", "handlePost selected file=" + fileList.get(i));
 // print all the data
             for(String key : files.keySet())
-                Log.i("WebServerThread", "handlePost filename=" + key + 
+                Stuff.log("WebServerThread", "handlePost filename=" + key + 
                     " temp file=" + files.get(key));
 
 
 // perform the operation
-//            Log.i("WebServerThread", "handlePost UPLOAD=" + content.get("UPLOAD"));
+//            Stuff.log("WebServerThread", "handlePost UPLOAD=" + content.get("UPLOAD"));
             if(content.get("__MKDIR") != null)
                 doMkdir(path, out, content);
             else
@@ -1606,7 +1666,7 @@ Log.i("WebServerThread", "handlePost name=" + name + " value=" + value);
                     lock.acquire();
 
 
-					Log.v("WebServerThread", "run: running 1");
+					Stuff.log("WebServerThread", "run: running 1");
                     BufferedInputStream in = new BufferedInputStream(connection.getInputStream());
                     OutputStream out = new BufferedOutputStream(connection.getOutputStream());
 
@@ -1614,11 +1674,11 @@ Log.i("WebServerThread", "handlePost name=" + name + " value=" + value);
 
 // read first line of request (ignore the rest)
                     String request = readLine(in);
-                    Log.i("x", "WebServerThread.run request=" + request);
+                    Stuff.log("x", "WebServerThread.run request=" + request);
 
                     if(request.length() > 13) {
                         String req = request.substring(4, request.length() - 9).trim();
-                        Log.i("x", "WebServerThread.run request=" + request + " req=" + req);
+                        Stuff.log("x", "WebServerThread.run request=" + request + " req=" + req);
 
 // extract the path name
                             String path = req;
@@ -1628,7 +1688,7 @@ Log.i("WebServerThread", "handlePost name=" + name + " value=" + value);
                             {
                                 String sort_command = path.substring(sort_index + 1);
                                 path = path.substring(0, sort_index);
-                                Log.i("x", "WebServerThread.run 1 sort_command=" + sort_command);
+                                Stuff.log("x", "WebServerThread.run 1 sort_command=" + sort_command);
                                 if(sort_command.substring(0, 4).equals("sort"))
                                 {
                                     Stuff.sortOrder = Integer.valueOf(sort_command.substring(5, 6));
@@ -1647,24 +1707,24 @@ Log.i("WebServerThread", "handlePost name=" + name + " value=" + value);
                                 path = path.substring(0, path.length() - 1);
                             }
 
-                            Log.i("x", "WebServerThread.run 1 path=" + path);
+                            Stuff.log("x", "WebServerThread.run 1 path=" + path);
 // get the file
                             if (request.startsWith("GET")) 
                             {
                                 // flush the socket to avoid a disconnection by peer
                                 while(true)
                                 {
-                                    //Log.i("x", "WebServerThread.run 1");
+                                    //Stuff.log("x", "WebServerThread.run 1");
 
                                     String line = readLine(in);
-                                    Log.i("WebServerThread", "run 2 line=" + line);
+                                    Stuff.log("WebServerThread", "run 2 line=" + line);
                                     if(line.length() == 0 ||
                                         line.charAt(0) == '\n')
                                     {
                                         break;
                                     }
                                 }
-                                Log.i("WebServerThread", "run 3 done");
+                                Stuff.log("WebServerThread", "run 3 done");
 
                                 sendFiles(path, out);
                             }
@@ -1678,7 +1738,7 @@ Log.i("WebServerThread", "handlePost name=" + name + " value=" + value);
 //                        }
                     }
 
-                    Log.i("x", "WebServerThread.run: finished");
+                    Stuff.log("x", "WebServerThread.run: finished");
                     out.flush();
                     if (connection != null)
                     {
@@ -1686,7 +1746,7 @@ Log.i("WebServerThread", "handlePost name=" + name + " value=" + value);
                     }
                 } catch(Exception e)
                 {
-                    Log.i("x", "WebServerThread.run: " + e);
+                    Stuff.log("x", "WebServerThread.run: " + e);
                 }
 
 
