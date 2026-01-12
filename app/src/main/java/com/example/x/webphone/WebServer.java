@@ -121,6 +121,12 @@ public class WebServer extends Thread
         if(thread == null)
         {
             Stuff.log("WebServer", "startConnection: out of threads");
+            try
+            {
+                connection.close();
+            } catch(Exception e)
+            {
+            }
             return;
         }
 
@@ -215,7 +221,7 @@ public class WebServer extends Thread
         // Used for sorting in ascending order of
         // roll number
         public int compare(DirEntry a, DirEntry b) {
-            int result = a.name.compareTo(b.name);
+            int result = a.name.toLowerCase().compareTo(b.name.toLowerCase());
             if (!Stuff.sortDescending) {
                 return result;
             } else
@@ -601,7 +607,6 @@ public class WebServer extends Thread
                         for (int i = 0; i < mFileList.length; i++) {
                             files[i] = new DirEntry(mFileList[i].getAbsolutePath());
                         }
-// TODO: sort by date, name, & size
                         switch (Stuff.sortOrder) {
                             case Stuff.SORT_SIZE:
                                 //Stuff.log("WebServerThread", "sendFiles SORT_SIZE");
@@ -619,8 +624,38 @@ public class WebServer extends Thread
                         }
 
                         sendHeader(pout, "text/html", -1);
-                        pout.print("<B>Index of " + decodedPath + "</B><P>\r\n");
+
+
+// don't underline links
+                        pout.print("<style>\n" +
+                            "a {\n" +
+                            "    text-decoration: none;\n" +
+                            "}\n" +
+                            "</style>\n\n");
+
+                        pout.print("<B>Index of " + decodedPath + "</B><BR>\r\n");
                         pout.print("<A HREF=\"" + path + "\"> <B>RELOAD </B></A><BR>\r\n");
+
+
+// create the .. entry
+                        if (!path.equals("/")) {
+                            String truncated = path;
+                            int i = truncated.lastIndexOf('/');
+                            if (i >= 0 && i < truncated.length() - 1) {
+                                truncated = truncated.substring(0, i + 1);
+                            }
+
+                            Stuff.log("WebServerThread", "sendFiles 2 truncated=" + truncated);
+
+                            String urlText = "<A HREF=\"" +
+                                    truncated +
+                                    "\"><B>PARENT DIR</B></A>";
+                            pout.print(urlText + "\r\n");
+//                            pout.print("<TR><TD></TD><TD></TD><TD>" +
+//                                    urlText +
+//                                    "</TD></TR>\r\n");
+                        }
+
 
 // must always encode in multipart data in case the filename has a ?
 // the order of the widgets determines the order of the form data
@@ -658,24 +693,6 @@ public class WebServer extends Thread
                         pout.print("</TR>\r\n");
                         pout.print("<TR><TD style=\"height: 1px;\" bgcolor=\"000000\" COLSPAN=3></TD></TR>\r\n");
 
-// create the .. entry
-                        if (!path.equals("/")) {
-                            String truncated = path;
-                            int i = truncated.lastIndexOf('/');
-                            if (i >= 0 && i < truncated.length() - 1) {
-                                truncated = truncated.substring(0, i + 1);
-                            }
-
-                            Stuff.log("WebServerThread", "sendFiles 2 truncated=" + truncated);
-
-                            String urlText = "<A HREF=\"" +
-                                    truncated +
-                                    "\">";
-                            pout.print("<TR><TD></TD><TD></TD><TD>" +
-                                    urlText +
-                                    "<B>PARENT DIR</B></TD></TR>\r\n");
-                        }
-
                         for (int i = 0; i < files.length; i++)
                         {
                             String formattedDate = "";
@@ -683,12 +700,12 @@ public class WebServer extends Thread
                             SimpleDateFormat sdf = new SimpleDateFormat("MM/dd/yyyy HH:mm");
                             formattedDate = sdf.format(files[i].date);
 
-                            String filenameText = files[i].name;
-                            String htmlEncodedName = encodeHtml(filenameText, false);
+                            String printedName = encodeHtml(files[i].name, false);
+                            String checkboxName = printedName;
                             String htmlEncodedPath = encodeHtml(files[i].path, true);
 
 Stuff.log("WebServerThread", "sendFiles HREF path=" + files[i].path +
-    " htmlEncodedName=" + htmlEncodedName.toString());
+    " printedName=" + printedName.toString());
 
                             String linkText = "<A HREF=\"" +
                                     htmlEncodedPath +
@@ -696,20 +713,19 @@ Stuff.log("WebServerThread", "sendFiles HREF path=" + files[i].path +
                             String textBegin = linkText;
 
 
-                            if (files[i].isDir) {
+                            if (files[i].isDir)
+                            {
                                 textBegin = "<B>" + linkText;
+                                printedName += "/";
+                            }
 
-
-                                if (isSymlink(files[i].path)) {
-                                    File file = new File(files[i].path);
-                                    filenameText = htmlEncodedName +
-                                            "/ -> " +
-                                            file.getCanonicalPath();
-                                }
-                                else
-                                {
-                                    filenameText = filenameText + "/";
-                                }
+                            if (isSymlink(files[i].path)) 
+                            {
+                                File file = new File(files[i].path);
+                                textBegin = "<I>" + textBegin;
+                                printedName = printedName +
+                                        " -> " +
+                                        file.getCanonicalPath();
                             }
 
                             pout.print("<TR><TD>" +
@@ -720,10 +736,10 @@ Stuff.log("WebServerThread", "sendFiles HREF path=" + files[i].path +
                                     formattedDate +
                                 "</TD><TD>" +
                                     "<INPUT TYPE=\"checkbox\" CLASS=\"item\" ID=\"a\" NAME=\"" + 
-                                    htmlEncodedName + 
+                                    checkboxName + 
                                     "\" VALUE=\"" + CHECKED + "\">" +
                                     textBegin +
-                                    htmlEncodedName +
+                                    printedName +
                                 "</TD></TR>\r\n"
                             );
                         }
@@ -758,7 +774,7 @@ Stuff.log("WebServerThread", "sendFiles HREF path=" + files[i].path +
                 }
                 else
                 {
-                    // send the file
+// send the file
                     try {
                         // send file
                         InputStream file = new FileInputStream(decodedPath);
@@ -1105,18 +1121,17 @@ Stuff.log("WebServerThread", "sendFiles HREF path=" + files[i].path +
 
         public void doMkdir(String path, 
             OutputStream out, 
-            Map<String, String> content)
+            String name)
         {
             PrintStream pout = new PrintStream(out);
-            boolean failed = false;
-            File file = new File(path + "/" + content.get("__MKDIRPATH"));
+            File file = new File(path + "/" + name);
             Stuff.log("WebServerThread", "doMkdir " + file.getPath());
 
             if(!file.mkdir())
             {
                 errorReport(pout, 
                     connection, 
-                    "555", 
+                    "404", 
                     "WebServerThread.doMkdir: MKDIR FAILED",
                     "Couldn't create the directory " + file.getPath());
             }
@@ -1194,7 +1209,6 @@ Stuff.log("WebServerThread", "sendFiles HREF path=" + files[i].path +
             OutputStream out,
             Map<String, String> files)
         {
-            PrintStream pout = new PrintStream(out);
 // rename the temp files
             boolean failed = false;
             for(String key : files.keySet())
@@ -1302,7 +1316,7 @@ Stuff.log("WebServerThread", "doUpload: renaming " + tempPath + " to " + newPath
             if(text.contains("Content-Type:"))
                 readLine(in);
 
-// read until the terminating sequence
+// read until the boundary
             boolean error = false;
             int read_result = 0;
             while(!error)
@@ -1391,7 +1405,7 @@ Stuff.log("WebServerThread", "doUpload: renaming " + tempPath + " to " + newPath
 //                     " boundary2.length=" + boundary2.length +
 //                     " fifo_size=" + fifo_size);
 
-// at most, fifo_size less the boundary size can be written
+// at most, maxWrite can be written
 // if we didn't get the boundary, eat the 1st byte of the boundary size to advance
 // the scan window
                 int maxWrite = fifo_size - boundary2.length;
@@ -1571,7 +1585,7 @@ Stuff.log("WebServerThread", "handlePost saving temp to " + tempPath);
                             errorReport(pout,
                                     connection,
                                     "555",
-                                    "WebServerThread.doUpload: SHIT",
+                                    "WebServerThread.handlePost: SHIT",
                                     "Couldn't create the temp file " + tempPath);
                             break;
                         }
@@ -1618,7 +1632,7 @@ Stuff.log("WebServerThread", "handlePost name=" + name + " value=" + value);
 // perform the operation
 //            Stuff.log("WebServerThread", "handlePost UPLOAD=" + content.get("UPLOAD"));
             if(content.get("__MKDIR") != null)
-                doMkdir(path, out, content);
+                doMkdir(path, out, content.get("__MKDIRPATH"));
             else
             if(content.get("__UPLOAD") != null)
                 doUpload(path, out, files);
@@ -1676,12 +1690,18 @@ Stuff.log("WebServerThread", "handlePost name=" + name + " value=" + value);
                     String request = readLine(in);
                     Stuff.log("x", "WebServerThread.run request=" + request);
 
-                    if(request.length() > 13) {
-                        String req = request.substring(4, request.length() - 9).trim();
-                        Stuff.log("x", "WebServerThread.run request=" + request + " req=" + req);
-
+                    String[] parts = request.split("\\s+");
+                    if(parts.length >= 2)
+                    {
+                        String req = parts[0];
+                        String path = parts[1];
 // extract the path name
-                            String path = req;
+//                        String path = request.substring(4, request.length() - 9).trim();
+                        Stuff.log("x", 
+                            "WebServerThread.run request=" + request + 
+                            " req=" + req + 
+                            " path=" + path);
+
 // handle a sort command.  Android doesn't allow ? in regular filenames
                             int sort_index = path.indexOf('?');
                             if(sort_index >= 0)
@@ -1701,15 +1721,14 @@ Stuff.log("WebServerThread", "handlePost name=" + name + " value=" + value);
                                 }
                             }
 
-                            // strip ending /
+// strip ending /
                             while (path.length() > 1 &&
                                     path.lastIndexOf('/') == path.length() - 1) {
                                 path = path.substring(0, path.length() - 1);
                             }
 
-                            Stuff.log("x", "WebServerThread.run 1 path=" + path);
 // get the file
-                            if (request.startsWith("GET")) 
+                            if (req.startsWith("GET")) 
                             {
                                 // flush the socket to avoid a disconnection by peer
                                 while(true)
@@ -1730,7 +1749,7 @@ Stuff.log("WebServerThread", "handlePost name=" + name + " value=" + value);
                             }
                             else
 // handle a form
-                            if (request.startsWith("POST")) 
+                            if (req.startsWith("POST")) 
                             {
 //                                dumpPost(path, in);
                                 handlePost(path, out, in);
