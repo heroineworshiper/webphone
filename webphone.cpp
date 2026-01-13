@@ -529,10 +529,10 @@ public:
 #define GET_NUMBER 2
         int state = GET_CODE1;
         dst->clear();
+        std::string number;
         for(int i = 0; i < src->length(); i++)
         {
             uint32_t c = src->at(i);
-            std::string number;
             switch(state)
             {
                 case GET_CODE1:
@@ -562,6 +562,9 @@ public:
                         int bits = 0;
                         for(int j = 0; j < 32; j++)
                             if((value & (1 << j))) bits = j + 1;
+
+//printf("decodeHTML %d: number=%s value=%d bits=%d\n", 
+//__LINE__, number.c_str(), value, bits);
                         if(bits > 16)
                         {
                             dst->push_back(0b11110000 | (value >> 18));
@@ -594,10 +597,9 @@ public:
         }
     }
 
-// convert UTF-8 to HTML escape codes
+// convert UTF-8 to HTML escape codes.  Append to htmlEncodedName
     void encodeHTML(std::string *htmlEncodedName, const char *src, int is_href)
     {
-        htmlEncodedName->clear();
         for(int in = 0; in < strlen(src); in++)
         {
             uint32_t code = (uint8_t)src[in];
@@ -718,30 +720,36 @@ public:
         print(string);
     }
 
+    void sendHeader(std::string *output, const char *contentType, long size)
+    {
+        char string[TEXTLEN];
+        output->append("HTTP/1.0 200 OK\r\n"
+            "Content-Type: ");
+        output->append(contentType);
+        output->append("\r\n");
+            
+        if(size > 0)
+        {
+            output->append("Content-Length: ");
+            sprintf(string, "%ld", size);
+            output->append(string);
+            output->append("\r\n");
+        }
+
+        time_t now = time(0);
+        struct tm *tm_info = localtime(&now);
+        strftime(string, TEXTLEN, "%a %b %d %H:%M:%S %Z %Y", tm_info);
+        output->append("Date: ");
+        output->append(string);
+        output->append("\r\n"
+            "Server: WebPhone\r\n\r\n");
+    }
 
     void sendHeader(const char *contentType, long size)
     {
-        char string[TEXTLEN];
-        sprintf(string, 
-            "HTTP/1.0 200 OK\r\n"
-            "Content-Type: %s\r\n",
-            contentType);
-        print(string);
-        if(size > 0)
-        {
-            sprintf(string, "Content-Length: %ld\r\n", size);
-            print(string);
-        }
-
-        char string2[TEXTLEN];
-        time_t now = time(0);
-        struct tm *tm_info = localtime(&now);
-        strftime(string2, TEXTLEN, "%a %b %d %H:%M:%S %Z %Y", tm_info);
-        sprintf(string,
-            "Date: %s\r\n"
-            "Server: WebPhone\r\n\r\n",
-            string2);
-        print(string);
+        std::string output;
+        sendHeader(&output, contentType, size);
+        print(output.c_str());
     }
 
     static int ends_with(const char *str, const char *suffix) 
@@ -1036,9 +1044,7 @@ public:
                         {
                             char *resolved = realpath(file->path.c_str(), 0);
                             printedName.append(" -> ");
-                            std::string printedPath2;
-                            encodeHTML(&printedPath2, resolved, 0);
-                            printedName.append(printedPath2);
+                            encodeHTML(&printedName, resolved, 0);
                             free(resolved);
                         }
 
@@ -1181,7 +1187,7 @@ public:
             if(text.empty() || text.find(eof_boundary) != std::string::npos) return;
             if(text.find("Content-Disposition:") == 0)
             {
-printf("getContentDisposition %d: %s\n", __LINE__, text.c_str());
+//printf("getContentDisposition %d: %s\n", __LINE__, text.c_str());
                 int offset = text.find("filename=\"");
                 if(offset != std::string::npos)
                 {
@@ -1226,6 +1232,7 @@ printf("getContentDisposition %d: %s\n", __LINE__, text.c_str());
                 value.append(line);
             else
             {
+//printf("getContentValue %d: %s\n", __LINE__, value.c_str());
 // delete the last newline
                 if(value.length() > 0 &&
                     value[value.length() - 1] == '\n')
@@ -1379,41 +1386,37 @@ printf("getContentDisposition %d: %s\n", __LINE__, text.c_str());
     void confirmDelete(std::string *path, 
         std::vector<std::string> *fileList)
     {
-        sendHeader("text/html", -1);
+        std::string output;
         std::string string;
-        string.assign("<B>Really delete the following files in ");
-        string.append(*path);
-        string.append("?</B><P>\r\n");
-        print(string.c_str());
+        sendHeader(&output, "text/html", -1);
+        output.append("<B>Really delete the following files in ");
+        output.append(*path);
+        output.append("?</B><P>\r\n");
         for(auto i = fileList->begin(); i != fileList->end(); i++)
         {
-            std::string encodedName;
-            encodeHTML(&encodedName, i->c_str(), 0);
-            encodedName.append("<BR>\r\n");
-            print(encodedName.c_str());
+            encodeHTML(&output, i->c_str(), 0);
+            output.append("<BR>\r\n");
         }
 
-        print("<P>\r\n");
-        print("<FORM METHOD=\"post\" ENCTYPE=\"multipart/form-data\" >\r\n");
+        output.append("<P>\r\n");
+        output.append("<FORM METHOD=\"post\" ENCTYPE=\"multipart/form-data\" >\r\n");
 // the buttons go first so they get the 1st form part
-        print("<BUTTON TYPE=\"submit\" VALUE=\"__CONFIRMDELETE\" NAME=\"__CONFIRMDELETE\">DELETE</BUTTON>\n");
-        print("<BUTTON TYPE=\"submit\" VALUE=\"__ABORTDELETE\" NAME=\"__ABORTDELETE\">DON'T DELETE</BUTTON><P>\n");
+        output.append("<BUTTON TYPE=\"submit\" VALUE=\"__CONFIRMDELETE\" NAME=\"__CONFIRMDELETE\">DELETE</BUTTON>\n");
+        output.append("<BUTTON TYPE=\"submit\" VALUE=\"__ABORTDELETE\" NAME=\"__ABORTDELETE\">DON'T DELETE</BUTTON><P>\n");
 
 
 // resend the file list
         for(auto i = fileList->begin(); i != fileList->end(); i++)
         {
-            std::string encodedName;
-            encodeHTML(&encodedName, i->c_str(), 0);
-            string.assign("<INPUT HIDDEN=\"true\" TYPE=\"text\" id=\"a\" name=\"");
-            string.append(encodedName);
-            string.append("\" value=\"");
-            string.append(CHECKED);
-            string.append("\">\r\n");
-            print(string.c_str());
+            output.append("<INPUT HIDDEN=\"true\" TYPE=\"text\" id=\"a\" name=\"");
+            encodeHTML(&output, i->c_str(), 0);
+            output.append("\" value=\"");
+            output.append(CHECKED);
+            output.append("\">\r\n");
         }
 
-        print("</FORM>\r\n");
+        output.append("</FORM>\r\n");
+        print(output.c_str());
     }
 
     void deleteFiles(std::string *path, 
@@ -1451,9 +1454,10 @@ printf("getContentDisposition %d: %s\n", __LINE__, text.c_str());
         std::vector<std::string> *fileList,
         std::string *movePath)
     {
-        sendHeader("text/html", -1);
+        std::string output;
         std::string string;
         std::string fullDst;
+        sendHeader(&output, "text/html", -1);
         if(movePath->find("/") == 0)
             fullDst.assign(*movePath);
         else
@@ -1463,46 +1467,39 @@ printf("getContentDisposition %d: %s\n", __LINE__, text.c_str());
             string.append(*movePath);
             encodeHTML(&fullDst, string.c_str(), 0);
         }
-        string.assign("<B>Really move the following files to ");
-        string.append(fullDst);
-        string.append("?</B><P>\r\n");
-        print(string.c_str());
+        output.append("<B>Really move the following files to ");
+        output.append(fullDst);
+        output.append("?</B><P>\r\n");
         for(auto i = fileList->begin(); i != fileList->end(); i++)
         {
-            std::string encodedName;
-            encodeHTML(&encodedName, i->c_str(), 0);
-            encodedName.append("<BR>\r\n");
-            print(encodedName.c_str());
+            encodeHTML(&output, i->c_str(), 0);
+            output.append("<BR>\r\n");
         }
 
 
-        print("<P>\r\n");
-        print("<FORM METHOD=\"post\" ENCTYPE=\"multipart/form-data\" >\r\n");
+        output.append("<P>\r\n");
+        output.append("<FORM METHOD=\"post\" ENCTYPE=\"multipart/form-data\" >\r\n");
 // the buttons go first so they get the 1st form part
-        print("<BUTTON TYPE=\"submit\" VALUE=\"__CONFIRMMOVE\" NAME=\"__CONFIRMMOVE\">MOVE</BUTTON>\n");
-        print("<BUTTON TYPE=\"submit\" VALUE=\"ABORTMOVE\" NAME=\"ABORTMOVE\">DON'T MOVE</BUTTON><P>\n");
+        output.append("<BUTTON TYPE=\"submit\" VALUE=\"__CONFIRMMOVE\" NAME=\"__CONFIRMMOVE\">MOVE</BUTTON>\n");
+        output.append("<BUTTON TYPE=\"submit\" VALUE=\"ABORTMOVE\" NAME=\"ABORTMOVE\">DON'T MOVE</BUTTON><P>\n");
 
 // resend the destination
-        string.assign("<INPUT HIDDEN=\"true\" TYPE=\"text\" id=\"a\" name=\"__MOVEPATH\" value=\"");
-        string.append(fullDst);
-        string.append("\">\r\n");
-        print(string.c_str());
+        output.append("<INPUT HIDDEN=\"true\" TYPE=\"text\" id=\"a\" name=\"__MOVEPATH\" value=\"");
+        output.append(fullDst);
+        output.append("\">\r\n");
 
 // resend the file list
         for(auto i = fileList->begin(); i != fileList->end(); i++)
         {
-            std::string encodedName;
-            encodeHTML(&encodedName, i->c_str(), 0);
-            
-            string.assign("<INPUT HIDDEN=\"true\" TYPE=\"text\" id=\"a\" name=\"");
-            string.append(encodedName);
-            string.append("\" value=\"");
-            string.append(CHECKED);
-            string.append("\">\r\n");
-            print(string.c_str());
+            output.append("<INPUT HIDDEN=\"true\" TYPE=\"text\" id=\"a\" name=\"");
+            encodeHTML(&output, i->c_str(), 0);
+            output.append("\" value=\"");
+            output.append(CHECKED);
+            output.append("\">\r\n");
         }
 
-        print("</FORM>\r\n");
+        output.append("</FORM>\r\n");
+        print(output.c_str());
     }
 
     void moveFiles(std::string *path, 
@@ -1548,13 +1545,13 @@ printf("getContentDisposition %d: %s\n", __LINE__, text.c_str());
     void confirmRename(std::string *path, 
         std::vector<std::string> *fileList)
     {
-        sendHeader("text/html", -1);
-        std::string string;
-        string.assign("<B>Rename the following files in ");
-        string.append(*path);
-        string.append("?</B><P>\r\n");
+        std::string output;
+        sendHeader(&output, "text/html", -1);
+        output.append("<B>Rename the following files in ");
+        output.append(*path);
+        output.append("?</B><P>\r\n");
 // the buttons go first so they get the 1st form part
-        string.append("<P>\r\n"
+        output.append("<P>\r\n"
             "<FORM METHOD=\"post\" ENCTYPE=\"multipart/form-data\" >\r\n"
             "<BUTTON TYPE=\"submit\" VALUE=\"__CONFIRMRENAME\" NAME=\"__CONFIRMRENAME\">RENAME</BUTTON>\n"
             "<BUTTON TYPE=\"submit\" VALUE=\"__ABORTRENAME\" NAME=\"__ABORTRENAME\">DON'T RENAME</BUTTON><P>\n");
@@ -1563,29 +1560,27 @@ printf("getContentDisposition %d: %s\n", __LINE__, text.c_str());
         {
             std::string encodedName;
             encodeHTML(&encodedName, i->c_str(), 0);
-            string.append(encodedName);
-            string.append(" -> "
+            output.append(encodedName);
+            output.append(" -> "
                 "<INPUT TYPE=\"text\" id=\"a\" name=\"");
-            string.append(encodedName);
-            string.append("\" value=\"");
-            string.append(encodedName);
-            string.append("\"><BR>\r\n");
+            output.append(encodedName);
+            output.append("\" value=\"");
+            output.append(encodedName);
+            output.append("\"><BR>\r\n");
         }
 
 // resend the file list
         for(auto i = fileList->begin(); i != fileList->end(); i++)
         {
-            std::string encodedName;
-            encodeHTML(&encodedName, i->c_str(), 0);
-            string.append("<INPUT HIDDEN=\"true\" TYPE=\"text\" id=\"a\" name=\"");
-            string.append(encodedName);
-            string.append("\" value=\"");
-            string.append(CHECKED);
-            string.append("\">\r\n");
+            output.append("<INPUT HIDDEN=\"true\" TYPE=\"text\" id=\"a\" name=\"");
+            encodeHTML(&output, i->c_str(), 0);
+            output.append("\" value=\"");
+            output.append(CHECKED);
+            output.append("\">\r\n");
         }
         
-        string.append("</FORM>\r\n");
-        print(string.c_str());
+        output.append("</FORM>\r\n");
+        print(output.c_str());
     }
 
     void renameFiles(std::string *path, 
@@ -1646,11 +1641,9 @@ printf("getContentDisposition %d: %s\n", __LINE__, text.c_str());
         completePath.append(*path);
         completePath.append("/");
         completePath.append(*fileList->begin());
-        std::string encodedPath;
-        encodeHTML(&encodedPath, completePath.c_str(), 0);
-        
+
         std::string output;
-        sendHeader("text/html", -1);
+        sendHeader(&output, "text/html", -1);
         output.append(
             "<style>\n"
             "    html, body {\n"
@@ -1707,7 +1700,7 @@ printf("getContentDisposition %d: %s\n", __LINE__, text.c_str());
         );
 
         output.append("<B>Editing ");
-        output.append(encodedPath);
+        encodeHTML(&output, completePath.c_str(), 0);
         output.append("</B><BR>\r\n");
         output.append("CR's have been stripped<BR>\n");
         if(wroteIt)
@@ -1764,9 +1757,8 @@ printf("getContentDisposition %d: %s\n", __LINE__, text.c_str());
             "<BUTTON TYPE=\"submit\" VALUE=\"__EDITQUIT\" NAME=\"__EDITQUIT\">QUIT</BUTTON><BR>\n"
         );
 // resend the file name
-        encodeHTML(&encodedPath, fileList->begin()->c_str(), 0);
         output.append("<INPUT HIDDEN=\"true\" TYPE=\"text\" id=\"a\" name=\"");
-        output.append(encodedPath);
+        encodeHTML(&output, fileList->begin()->c_str(), 0);
         output.append("\" value=\"");
         output.append(CHECKED);
         output.append("\">\r\n");
@@ -1877,6 +1869,8 @@ printf("getContentDisposition %d: %s\n", __LINE__, text.c_str());
                     {
                         std::string decodedName;
                         decodeHTML(&decodedName, &result.name);
+printf("WebServerThread::handlePost %d: %s -> %s\n",
+__LINE__, result.name.c_str(), decodedName.c_str());
                         fileList.push_back(decodedName);
                     }
                     else
