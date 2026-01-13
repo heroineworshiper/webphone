@@ -599,21 +599,22 @@ public:
     }
 
 // convert UTF-8 to HTML escape codes.  Append to htmlEncodedName
-    void encodeHTML(std::string *htmlEncodedName, const char *src, int is_href)
+    void encodeHTML(std::string *output, const char *src, int is_href)
     {
-        for(int in = 0; in < strlen(src); in++)
+        int len = strlen(src);
+        for(int in = 0; in < len; in++)
         {
             uint32_t code = (uint8_t)src[in];
-            if((code & 0x80))
+            if((code & 0x80) || code == '<' || code == '>')
             {
                 if(is_href)
                 {
 // convert UTF-8 to % code
                     const char *hex = "0123456789abcdef";
 
-                    htmlEncodedName->push_back('%');
-                    htmlEncodedName->push_back(hex[(code & 0xf0) >> 4]);
-                    htmlEncodedName->push_back(hex[(code & 0x0f)]);
+                    output->push_back('%');
+                    output->push_back(hex[(code & 0xf0) >> 4]);
+                    output->push_back(hex[(code & 0x0f)]);
                 }
                 else
                 {
@@ -623,7 +624,7 @@ public:
                         continue;
 
 // 4 byte code
-                    if((code & 0b11111000) == 0b11110000)
+                    if((code & 0b11111000) == 0b11110000 && in < len - 3)
                     {
                         code = ((code & 0b00000111) << 18) |
                             ((((uint32_t)src[in + 1]) & 0b00111111) << 12) |
@@ -633,7 +634,7 @@ public:
                     }
                     else
 // 3 byte code
-                    if((code & 0b11110000) == 0b11100000)
+                    if((code & 0b11110000) == 0b11100000 && in < len - 2)
                     {
                         code = ((code & 0b00001111) << 12) |
                             ((((uint32_t)src[in + 1]) & 0b00111111) << 6) |
@@ -642,7 +643,7 @@ public:
                     }
                     else
 // 2 byte code
-                    if((code & 0b11100000) == 0b11000000)
+                    if((code & 0b11100000) == 0b11000000 && in < len - 1)
                     {
                         code = ((code & 0b00011111) << 6) |
                             (((uint32_t)src[in + 1]) & 0b00111111);
@@ -651,11 +652,11 @@ public:
 
                     char string2[TEXTLEN];
                     sprintf(string2, "&#%d;", code);
-                    htmlEncodedName->append(string2);
+                    output->append(string2);
                 }
             }
             else
-                htmlEncodedName->push_back(code);
+                output->push_back(code);
         }
     }
 
@@ -1740,16 +1741,32 @@ public:
         }
         else
         {
+            fseek(fd, 0, SEEK_END);
+            long size = ftell(fd);
+            fseek(fd, 0, SEEK_SET);
+            if(size > 0x100000)
+            {
+                fclose(fd);
+                errorReport("404", 
+                    "WebServerThread::editFile",
+                    "File too large.");
+                return;
+            }
+
             print(output.c_str());
             output.clear();
-            uint8_t buffer[FIFOSIZE];
-            while(1)
+            char *buffer = (char*)malloc(size + 1);
+            int bytes_read = fread(buffer, 1, size, fd);
+            if(bytes_read > 0)
             {
-                int bytes_read = fread(buffer, 1, FIFOSIZE, fd);
-                if(bytes_read <= 0) break;
-                int _ = write(connection, buffer, bytes_read);
+// null terminate for HTML converter
+                buffer[bytes_read] = 0;
+                encodeHTML(&output, buffer, 0);
+                int _ = write(connection, output.c_str(), output.length());
+                output.clear();
             }
             fclose(fd);
+            free(buffer);
         }
         
         output.append(
