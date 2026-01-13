@@ -375,6 +375,7 @@ public:
     {
         WebServerThread *thread = (WebServerThread*)ptr;
         thread->run();
+        return 0;
     }
     
     void run()
