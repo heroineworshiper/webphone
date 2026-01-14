@@ -780,6 +780,8 @@ public:
             return "text/html";
         else if (ends_with(path, ".gif"))
             return "image/gif";
+        else if (ends_with(path, ".gz"))
+            return "application/gzip";
         else if (ends_with(path, ".jpg") || ends_with(path, ".jpeg"))
             return "image/jpeg";
         else if (ends_with(path, ".js"))
@@ -794,8 +796,6 @@ public:
             return "application/pdf";
         else if (ends_with(path, ".png"))
             return "image/png";
-        else if (ends_with(path, ".txt") || ends_with(path, ".java"))
-            return "text/plain";
         else
             return "text/plain";
     }
