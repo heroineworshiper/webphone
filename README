@@ -39,7 +39,7 @@ java -cp . com.example.x.webphone.Stuff
 
 Another standalone version is in C++, for devices without a full JVM.
 
-g++ -std=c++11 -O2 -o webphone webphone.cpp -lpthread
+g++ -std=c++11 -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64 -O2 -o webphone webphone.cpp -lpthread
 ./webphone
 
 

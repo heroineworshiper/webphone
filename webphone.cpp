@@ -20,7 +20,7 @@
 
 // C++ port of the whole thing, because of the large amount of space
 // required by a JVM.
-// g++ -g -std=c++11 -O2 -o webphone webphone.cpp -lpthread
+// g++ -g -std=c++11 -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64 -O2 -o webphone webphone.cpp -lpthread
 
 #include <stdio.h>
 #include <stdint.h>
@@ -72,6 +72,7 @@ public:
             isDir = S_ISDIR(ostat.st_mode);
             size = ostat.st_size;
             date = ostat.st_mtime;
+
             struct stat ostat2;
             lstat(path.c_str(), &ostat2);
             isLink = S_ISLNK(ostat2.st_mode);
@@ -471,7 +472,7 @@ public:
                 handlePost(&path, &in);
             }
 
-            printf("WebServerThread::run %d: finished", __LINE__);
+            printf("WebSesrverThread::run %d: finished\n", __LINE__);
             close(connection);
             busy = false;
         }
@@ -722,7 +723,7 @@ public:
         print(string);
     }
 
-    void sendHeader(std::string *output, const char *contentType, long size)
+    void sendHeader(std::string *output, const char *contentType, int64_t size)
     {
         char string[TEXTLEN];
         output->append("HTTP/1.0 200 OK\r\n"
@@ -730,12 +731,12 @@ public:
         output->append(contentType);
         output->append("\r\n");
             
+//printf("sendHeader %d: %lld\n", __LINE__, (long long)size);
         if(size > 0)
         {
-            output->append("Content-Length: ");
-            sprintf(string, "%ld", size);
+            sprintf(string, "Content-Length: %lld\r\n", (long long)size);
+//printf("sendHeader %d: %s\n", __LINE__, string);
             output->append(string);
-            output->append("\r\n");
         }
 
         time_t now = time(0);
@@ -747,7 +748,7 @@ public:
             "Server: WebPhone\r\n\r\n");
     }
 
-    void sendHeader(const char *contentType, long size)
+    void sendHeader(const char *contentType, int64_t size)
     {
         std::string output;
         sendHeader(&output, contentType, size);
@@ -785,7 +786,9 @@ public:
             return "application/javascript";
         else if (ends_with(path, ".mp3"))
             return "audio/mpeg3";
-        else if (ends_with(path, ".mp4"))
+        else if (ends_with(path, ".m4a"))
+            return "audio/mp4";
+        else if (ends_with(path, ".mp4") || ends_with(path, ".m4v"))
             return "video/mp4";
         else if (ends_with(path, ".pdf"))
             return "application/pdf";
@@ -1050,13 +1053,11 @@ public:
                             free(resolved);
                         }
 
-//printf("WebServerThread::sendFiles %d: textBegin=%d printedName=%d %s\n", 
-//__LINE__, (int)textBegin.size(), (int)printedName.size(), printedName.c_str());
                         std::string output;
 // size
                         output.assign("<TR><TD>");
                         output.append(textBegin);
-                        sprintf(string, "%ld", (long)file->size);
+                        sprintf(string, "%lld", (long long)file->size);
                         output.append(string);
 
 // date                        
@@ -1742,7 +1743,7 @@ public:
         else
         {
             fseek(fd, 0, SEEK_END);
-            long size = ftell(fd);
+            int64_t size = ftell(fd);
             fseek(fd, 0, SEEK_SET);
             if(size > 0x100000)
             {
