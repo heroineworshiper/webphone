@@ -505,12 +505,13 @@ public:
         dst->clear();
         while(in < src_len)
         {
-            if(src->at(in) == '+')
-            {
-                dst->push_back(' ');
-                in++;
-            }
-            else
+// + made the titanic directory fail
+//             if(src->at(in) == '+')
+//             {
+//                 dst->push_back(' ');
+//                 in++;
+//             }
+//             else
             if(src->at(in) == '%' && in < src_len - 2)
             {
                 uint8_t value = (hex_to_i(src->at(in + 1)) << 4) |
