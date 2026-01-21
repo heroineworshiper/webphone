@@ -533,16 +533,19 @@ public:
         int state = GET_CODE1;
         dst->clear();
         std::string number;
+        std::vector<uint32_t> intstring;
+//printf("decodeHTML %d: %s\n", __LINE__, src->c_str());
+// convert all the codes into integer values in a new intstring
         for(int i = 0; i < src->length(); i++)
         {
-            uint32_t c = src->at(i);
+            uint32_t c = (uint8_t)src->at(i);
             switch(state)
             {
                 case GET_CODE1:
                     if(c == '&') 
                         state = GET_CODE2;
                     else
-                        dst->push_back(c);
+                        intstring.push_back(c);
                     break;
                 case GET_CODE2:
                     if(c == '#') 
@@ -553,7 +556,7 @@ public:
                     else
                     {
                         state = GET_CODE1;
-                        dst->push_back(c);
+                        intstring.push_back(c);
                     }
                     break;
                 case GET_NUMBER:
@@ -561,41 +564,67 @@ public:
                     {
                         state = GET_CODE1;
                         uint32_t value = atoi(number.c_str());
-// integer to UTF-8
-                        int bits = 0;
-                        for(int j = 0; j < 32; j++)
-                            if((value & (1 << j))) bits = j + 1;
-
-//printf("decodeHTML %d: number=%s value=%d bits=%d\n", 
-//__LINE__, number.c_str(), value, bits);
-                        if(bits > 16)
-                        {
-                            dst->push_back(0b11110000 | (value >> 18));
-                            dst->push_back(0b10000000 | ((value >> 12) & 0b00111111));
-                            dst->push_back(0b10000000 | ((value >> 6) & 0b00111111));
-                            dst->push_back(0b10000000 | (value & 0b00111111));
-                        }
-                        else
-                        if(bits > 11)
-                        {
-                            dst->push_back(0b11100000 | (value >> 12));
-                            dst->push_back(0b10000000 | ((value >> 6) & 0b00111111));
-                            dst->push_back(0b10000000 | (value & 0b00111111));
-                        }
-                        else
-                        if(bits > 7)
-                        {
-                            dst->push_back(0b11000000 | (value >> 6));
-                            dst->push_back(0b10000000 | (value & 0b00111111));
-                        }
-                        else
-                        {
-                            dst->push_back(value);
-                        }
+                        intstring.push_back(value);
+//printf("decodeHTML %d: %d\n", __LINE__, value);
                     }
                     else
                         number.push_back(c);
                     break;
+            }   
+        }
+
+// convert all the integer values into binary UTF-8
+        for(int i = 0; i < intstring.size(); i++)
+        {
+            uint32_t c = intstring.at(i);
+
+//printf("decodeHTML %d: c=%d\n", __LINE__, c);
+            if(c < 128)
+            {
+// pass through all below 128
+                dst->push_back(c);
+            }
+            else
+//             if(c < 256 &&
+//                 (i >= intstring.size() - 1 ||
+//                 intstring.at(i + 1) < 128))
+//             {
+// // HACK: pass through a code < 256 not followed by another code > 127
+//                 dst->push_back(c);
+//             }
+//             else
+            {
+// UTF-8 encode
+                int bits = 0;
+                for(int j = 0; j < 32; j++)
+                    if((c & (1 << j))) bits = j + 1;
+
+//printf("decodeHTML %d: number=%s value=%d bits=%d\n", 
+//__LINE__, number.c_str(), value, bits);
+                if(bits > 16)
+                {
+                    dst->push_back(0b11110000 | (c >> 18));
+                    dst->push_back(0b10000000 | ((c >> 12) & 0b00111111));
+                    dst->push_back(0b10000000 | ((c >> 6) & 0b00111111));
+                    dst->push_back(0b10000000 | (c & 0b00111111));
+                }
+                else
+                if(bits > 11)
+                {
+                    dst->push_back(0b11100000 | (c >> 12));
+                    dst->push_back(0b10000000 | ((c >> 6) & 0b00111111));
+                    dst->push_back(0b10000000 | (c & 0b00111111));
+                }
+                else
+                if(bits > 7)
+                {
+                    dst->push_back(0b11000000 | (c >> 6));
+                    dst->push_back(0b10000000 | (c & 0b00111111));
+                }
+                else
+                {
+                    dst->push_back(c);
+                }
             }   
         }
     }
@@ -621,10 +650,15 @@ public:
                 else
                 {
 // convert UTF-8 to &# codes
-// invalid code
-                    if((code & 0b11000000) == 0b10000000)
-                        continue;
-
+// pass through continuation code with no start code
+                    if((code & 0b11000000) == 0b10000000 ||
+// pass through start code with no continuation code
+                        ((code & 0x80) && 
+                        (in >= len - 1 || (src[in + 1] & 0b11000000) != 0b10000000)))
+                    {
+                        ;
+                    }
+                    else
 // 4 byte code
                     if((code & 0b11111000) == 0b11110000 && in < len - 3)
                     {
@@ -1029,6 +1063,9 @@ public:
                         std::string printedName;
                         std::string checkboxName;
                         std::string linkPath;
+//printf("sendfiles %d: %s ", __LINE__, file->name.c_str());
+//for(int j = 0; j < file->name.length(); j++) printf("%02x ", (uint8_t)file->name.at(j));
+//printf("\n");
                         encodeHTML(&printedName, file->name.c_str(), 0);
                         checkboxName.assign(printedName);
                         encodeHTML(&linkPath, file->path.c_str(), 1);
@@ -1191,7 +1228,7 @@ public:
             if(text.empty() || text.find(eof_boundary) != std::string::npos) return;
             if(text.find("Content-Disposition:") == 0)
             {
-//printf("getContentDisposition %d: %s\n", __LINE__, text.c_str());
+//printf("WebServerThread::getContentDisposition %d: %s\n", __LINE__, text.c_str());
                 int offset = text.find("filename=\"");
                 if(offset != std::string::npos)
                 {
@@ -1236,7 +1273,7 @@ public:
                 value.append(line);
             else
             {
-//printf("getContentValue %d: %s\n", __LINE__, value.c_str());
+//printf("WebServerThread::getContentValue %d: %s\n", __LINE__, value.c_str());
 // delete the last newline
                 if(value.length() > 0 &&
                     value[value.length() - 1] == '\n')
@@ -1551,6 +1588,12 @@ public:
     {
         std::string output;
         sendHeader(&output, "text/html", -1);
+        output.append("<style>\r\n"
+            ".full-width {\r\n"
+            "  width: 100%;\r\n"
+            "}\r\n"
+            "</style>\r\n");
+
         output.append("<B>Rename the following files in ");
         output.append(*path);
         output.append("?</B><P>\r\n");
@@ -1564,9 +1607,13 @@ public:
         {
             std::string encodedName;
             encodeHTML(&encodedName, i->c_str(), 0);
+//printf("\nWebServerThread::confirmRename %d encodedName=%s\n",
+//__LINE__, encodedName.c_str());
+//for(int j = 0; j < i->length(); j++) printf("%02x ", (uint8_t)i->at(j));
+//printf("\n");
             output.append(encodedName);
-            output.append(" -> "
-                "<INPUT TYPE=\"text\" id=\"a\" name=\"");
+            output.append(" -> <BR>"
+                "<INPUT TYPE=\"text\" class=\"full-width\" id=\"a\" name=\"");
             output.append(encodedName);
             output.append("\" value=\"");
             output.append(encodedName);
@@ -1595,6 +1642,21 @@ public:
         for(auto i = fileList->begin(); i != fileList->end(); i++)
         {
             std::string oldName = *i;
+//            printf("renameFiles %d oldName=%s\n", __LINE__, oldName.c_str());
+            if(content->find(oldName) == content->end())
+            {
+//                printf("renameFiles %d: couldn't find %s\n", __LINE__, oldName.c_str());
+                std::string string;
+                string.append("Couldn't find ");
+                string.append(oldName.c_str());
+                string.append("in ContentDisposition.\r\n");
+                errorReport("404", 
+                    "WebServerThread::renameFiles",
+                    string.c_str());
+                error = 1;
+                break;
+                error = 1;
+            }
             std::string newName = content->find(oldName)->second;
             if(oldName.compare(newName))
             {
@@ -1885,16 +1947,23 @@ public:
                 {
                     ContentValue result2;
                     getContentValue(&result2, in, boundary);
+// must convert all ContentDisposition to UTF-8 to match the filesystem
+                    std::string decodedName;
+                    decodeHTML(&decodedName, &result.name);
                     if(!result2.value.compare(CHECKED))
                     {
-                        std::string decodedName;
-                        decodeHTML(&decodedName, &result.name);
-printf("WebServerThread::handlePost %d: %s -> %s\n",
-__LINE__, result.name.c_str(), decodedName.c_str());
+// printf("WebServerThread::handlePost %d: %s -> %s\n",
+// __LINE__, result.name.c_str(), decodedName.c_str());
+// for(int i = 0; i < result.name.length(); i++) 
+// printf("%02x ", (uint8_t)result.name.at(i));
+// printf("\n");
                         fileList.push_back(decodedName);
                     }
                     else
-                        content.insert(std::make_pair(result.name, result2.value));
+                    {
+//                        content.insert(std::make_pair(result.name, result2.value));
+                        content.insert(std::make_pair(decodedName, result2.value));
+                    }
 
                     if(result2.eof) break;
                 }
