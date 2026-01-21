@@ -1947,13 +1947,15 @@ public:
                 {
                     ContentValue result2;
                     getContentValue(&result2, in, boundary);
-// must convert all ContentDisposition to UTF-8 to match the filesystem
+// must convert all ContentDisposition to UTF-8 to match the names in the filesystem
+// TODO: might need a new decoder which keeps &#; intact & just 
+// converts invalid codes > 127 to UTF-8.  
                     std::string decodedName;
                     decodeHTML(&decodedName, &result.name);
                     if(!result2.value.compare(CHECKED))
                     {
-// printf("WebServerThread::handlePost %d: %s -> %s\n",
-// __LINE__, result.name.c_str(), decodedName.c_str());
+//printf("WebServerThread::handlePost %d: %s -> %s\n",
+//__LINE__, result.name.c_str(), decodedName.c_str());
 // for(int i = 0; i < result.name.length(); i++) 
 // printf("%02x ", (uint8_t)result.name.at(i));
 // printf("\n");
@@ -1962,7 +1964,9 @@ public:
                     else
                     {
 //                        content.insert(std::make_pair(result.name, result2.value));
-                        content.insert(std::make_pair(decodedName, result2.value));
+                        std::string decodedValue;
+                        decodeHTML(&decodedValue, &result2.value);
+                        content.insert(std::make_pair(decodedName, decodedValue));
                     }
 
                     if(result2.eof) break;
