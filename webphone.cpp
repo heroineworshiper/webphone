@@ -43,6 +43,8 @@
 #include <map>
 
 #define TEXTLEN 1024
+// commands have to start in __ because they fill the same tags as
+// hex encoded names
 #define CHECKED "__CHECKED"
 
 
@@ -696,7 +698,51 @@ public:
         }
     }
 
+// convert HEX to raw data.  Replaces output
+    void decodeHEX(std::string *output, std::string *input)
+    {
+        output->clear();
+        if(input->length() > 2 &&
+            input->at(0) == '_' &&
+            input->at(1) == '_')
+        {
+// command tag starting in __
+            output->assign(*input);
+            return;
+        }
+        
+        for(int i = 0; i < input->length() - 1; i += 2)
+        {
+            uint8_t c1 = toupper(input->at(i));
+            uint8_t c2 = toupper(input->at(i + 1));
+            uint8_t nibble1 = 0;
+            uint8_t nibble2 = 0;
+            if(c1 >= '0' && c1 <= '9')
+                nibble1 = c1 - '0';
+            else
+            if(c1 >= 'A' && c1 <= 'F')
+                nibble1 = 0xa + c1 - 'A';
+            if(c2 >= '0' && c2 <= '9')
+                nibble2 = c2 - '0';
+            else
+            if(c2 >= 'A' && c2 <= 'F')
+                nibble2 = 0xa + c2 - 'A';
+            output->push_back(nibble2 | (nibble1 << 4));
+        }
+    }
     
+// convert raw data to HEX.  Append to output
+    void encodeHEX(std::string *output, const char *input)
+    {
+        const char *hex = "0123456789abcdef";
+        int len = strlen(input);
+        for(int i = 0; i < len; i++)
+        {
+            uint8_t c = input[i];
+            output->push_back(hex[(c >> 4)]);
+            output->push_back(hex[(c & 0xf)]);
+        }
+    }
 
 
     static int path_ascending(const void *ptr1, const void *ptr2)
@@ -1067,8 +1113,8 @@ public:
 //for(int j = 0; j < file->name.length(); j++) printf("%02x ", (uint8_t)file->name.at(j));
 //printf("\n");
                         encodeHTML(&printedName, file->name.c_str(), 0);
-                        checkboxName.assign(printedName);
                         encodeHTML(&linkPath, file->path.c_str(), 1);
+                        encodeHEX(&checkboxName, file->name.c_str());
                         
                         std::string textBegin;
                         if(file->isLink) textBegin.append("<I>");
@@ -1450,7 +1496,7 @@ public:
         for(auto i = fileList->begin(); i != fileList->end(); i++)
         {
             output.append("<INPUT HIDDEN=\"true\" TYPE=\"text\" id=\"a\" name=\"");
-            encodeHTML(&output, i->c_str(), 0);
+            encodeHEX(&output, i->c_str());
             output.append("\" value=\"");
             output.append(CHECKED);
             output.append("\">\r\n");
@@ -1533,7 +1579,7 @@ public:
         for(auto i = fileList->begin(); i != fileList->end(); i++)
         {
             output.append("<INPUT HIDDEN=\"true\" TYPE=\"text\" id=\"a\" name=\"");
-            encodeHTML(&output, i->c_str(), 0);
+            encodeHEX(&output, i->c_str());
             output.append("\" value=\"");
             output.append(CHECKED);
             output.append("\">\r\n");
@@ -1607,6 +1653,8 @@ public:
         {
             std::string encodedName;
             encodeHTML(&encodedName, i->c_str(), 0);
+            std::string hexName;
+            encodeHEX(&hexName, i->c_str());
 //printf("\nWebServerThread::confirmRename %d encodedName=%s\n",
 //__LINE__, encodedName.c_str());
 //for(int j = 0; j < i->length(); j++) printf("%02x ", (uint8_t)i->at(j));
@@ -1614,17 +1662,17 @@ public:
             output.append(encodedName);
             output.append(" -> <BR>"
                 "<INPUT TYPE=\"text\" class=\"full-width\" id=\"a\" name=\"");
-            output.append(encodedName);
+            output.append(hexName);
             output.append("\" value=\"");
             output.append(encodedName);
-            output.append("\"><BR>\r\n");
+            output.append("\"><P>\r\n");
         }
 
 // resend the file list
         for(auto i = fileList->begin(); i != fileList->end(); i++)
         {
             output.append("<INPUT HIDDEN=\"true\" TYPE=\"text\" id=\"a\" name=\"");
-            encodeHTML(&output, i->c_str(), 0);
+            encodeHEX(&output, i->c_str());
             output.append("\" value=\"");
             output.append(CHECKED);
             output.append("\">\r\n");
@@ -1840,7 +1888,7 @@ public:
         );
 // resend the file name
         output.append("<INPUT HIDDEN=\"true\" TYPE=\"text\" id=\"a\" name=\"");
-        encodeHTML(&output, fileList->begin()->c_str(), 0);
+        encodeHEX(&output, fileList->begin()->c_str());
         output.append("\" value=\"");
         output.append(CHECKED);
         output.append("\">\r\n");
@@ -1898,6 +1946,7 @@ public:
         {
             ContentDisposition result;
             getContentDisposition(&result, in, boundary);
+// decode the uploaded filename
             std::string decodedFilename;
             decodeHTML(&decodedFilename, &result.filename);
 
@@ -1947,15 +1996,13 @@ public:
                 {
                     ContentValue result2;
                     getContentValue(&result2, in, boundary);
-// must convert all ContentDisposition to UTF-8 to match the names in the filesystem
-// TODO: might need a new decoder which keeps &#; intact & just 
-// converts invalid codes > 127 to UTF-8.  
+// decode the NAME= tag
                     std::string decodedName;
-                    decodeHTML(&decodedName, &result.name);
+                    decodeHEX(&decodedName, &result.name);
+printf("WebServerThread::handlePost %d: %s -> %s\n",
+__LINE__, result.name.c_str(), decodedName.c_str());
                     if(!result2.value.compare(CHECKED))
                     {
-//printf("WebServerThread::handlePost %d: %s -> %s\n",
-//__LINE__, result.name.c_str(), decodedName.c_str());
 // for(int i = 0; i < result.name.length(); i++) 
 // printf("%02x ", (uint8_t)result.name.at(i));
 // printf("\n");
