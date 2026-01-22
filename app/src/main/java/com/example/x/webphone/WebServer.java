@@ -512,7 +512,7 @@ public class WebServer extends Thread
             for(char c : in.toCharArray())
             {
                 int code = (int)c;
-                if(code >= 128) 
+                if(code >= 128 || c == '<' || c == '>') 
                 {
                     if(is_href)
                     {
@@ -582,6 +582,9 @@ public class WebServer extends Thread
             }
             return decodedText.toString();
         }
+
+
+
 
 // send the big directory listing or a single file
         public void sendFiles(String path, OutputStream out)
@@ -701,14 +704,14 @@ public class WebServer extends Thread
                             formattedDate = sdf.format(files[i].date);
 
                             String printedName = encodeHtml(files[i].name, false);
+                            String linkPath = encodeHtml(files[i].path, true);
                             String checkboxName = printedName;
-                            String htmlEncodedPath = encodeHtml(files[i].path, true);
 
 Stuff.log("WebServerThread", "sendFiles HREF path=" + files[i].path +
     " printedName=" + printedName.toString());
 
                             String linkText = "<A HREF=\"" +
-                                    htmlEncodedPath +
+                                    linkPath +
                                     "\">";
                             String textBegin = linkText;
 
@@ -887,6 +890,11 @@ Stuff.log("WebServerThread", "sendFiles HREF path=" + files[i].path +
             {
                 PrintStream pout = new PrintStream(out);
                 sendHeader(pout, "text/html", -1);
+                pout.print("<style>\r\n" +
+                    ".full-width {\r\n" +
+                    "  width: 100%;\r\n" +
+                    "}\r\n" +
+                    "</style>\r\n");
                 pout.print("<B>Rename the following files in " + path + "?</B><P>\r\n");
 
                 pout.print("<P>\r\n");
@@ -899,11 +907,11 @@ Stuff.log("WebServerThread", "sendFiles HREF path=" + files[i].path +
                     String htmlEncoded = encodeHtml(fileList.get(i), false);
                     pout.print(htmlEncoded + 
                         " -> " +
-                        "<INPUT TYPE=\"text\" id=\"a\" name=\"" +
+                        "<INPUT TYPE=\"text\" class=\"full-width\" id=\"a\" name=\"" +
                         htmlEncoded + 
                         "\" value=\"" +
                         htmlEncoded + 
-                        "\"><BR>\r\n");
+                        "\"><P>\r\n");
                 }
 
 // resend the file list
@@ -945,9 +953,16 @@ Stuff.log("WebServerThread", "sendFiles HREF path=" + files[i].path +
             {
                 String completePath = path + "/" + fileList.get(0);
                 InputStream file = new FileInputStream(completePath);
-                byte[] buffer = new byte[65536];
                 int size = file.available();
-
+                if(size > 0x100000)
+                {
+                    errorReport(new PrintStream(out),
+                        connection,
+                        "404",
+                        "WebServerThread.editFile: SHIT",
+                        "File too large.");
+                    return;
+                }
 
                 PrintStream pout = new PrintStream(out);
                 sendHeader(pout, "text/html", -1);
@@ -1022,8 +1037,15 @@ Stuff.log("WebServerThread", "sendFiles HREF path=" + files[i].path +
 
 
 // print the file
-                while (file.available() > 0)
-                    pout.write(buffer, 0, file.read(buffer));
+                byte[] buffer = new byte[size];
+                int bytesRead = file.read(buffer);
+// must convert to HTML to avoid breaking text area
+                String str1 = new String(buffer, StandardCharsets.UTF_8);
+                String str2 = encodeHtml(str1, false);
+                pout.print(str2);  
+
+//                while (file.available() > 0)
+//                    pout.write(buffer, 0, file.read(buffer));
 
 
                 pout.print("</TEXTAREA>\r\n");
@@ -1070,7 +1092,7 @@ Stuff.log("WebServerThread", "sendFiles HREF path=" + files[i].path +
                 PrintStream pout = new PrintStream(out);
                 errorReport(pout,
                         connection,
-                        "555",
+                        "404",
                         "WebServerThread.editSave: SHIT",
                         "Couldn't save the file " + encodeHtml(newPath, false));
             }
@@ -1534,6 +1556,7 @@ Stuff.log("WebServerThread", "getContentDisposition text=" + text);
                 String filename = result.get("filename");
                 String name = result.get("name");
 //                String decodedFilename = Html.fromHtml(filename).toString();
+// decode the uploaded filename
                 String decodedFilename = decodeHtml(filename);
 
 
@@ -1598,18 +1621,22 @@ Stuff.log("WebServerThread", "handlePost saving temp to " + tempPath);
                     else
                     {
                         result = getContentValue(boundary, in);
-
+// decode the NAME= tag
                         String value = result.get("value");
                         boolean isEOF = result.get("eof") != null;
+                        String decodedName = decodeHtml(name);
+                        
+                        
 Stuff.log("WebServerThread", "handlePost name=" + name + " value=" + value);
                         if(value.equals(CHECKED))
-                            fileList.add(decodeHtml(name));
+                            fileList.add(decodedName);
                         else
-                            content.put(name, value);
+                        {
+                            String decodedValue = decodeHtml(value);
+                            content.put(decodedName, decodedValue);
+                        }
 
                         if(isEOF) break;
-//                        if(skipBoundary(boundary, in))
-//                            break;
                     }
                 }
                 else
