@@ -157,7 +157,8 @@ public class ManeActivity extends AppCompatActivity {
                         " address=" + a.toString());
                  if(!a.isLinkLocalAddress())
                  {
-                     title.setText(a.toString().substring(1) + ":" + Stuff.PORT /* + "/get?/" */);
+                     title.setText("WEBPHONE AT\n" +
+                        a.toString().substring(1) + ":" + Stuff.PORT);
                  }
             }
         }

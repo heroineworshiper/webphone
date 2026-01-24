@@ -637,7 +637,7 @@ public class WebServer extends Thread
                             "</style>\n\n");
 
                         pout.print("<B>Index of " + decodedPath + "</B><BR>\r\n");
-                        pout.print("<A HREF=\"" + path + "\"> <B>RELOAD </B></A><BR>\r\n");
+                        pout.print("<A HREF=\"" + path + "\"> <B>RELOAD </B></A>");
 
 
 // create the .. entry
@@ -650,7 +650,7 @@ public class WebServer extends Thread
 
                             Stuff.log("WebServerThread", "sendFiles 2 truncated=" + truncated);
 
-                            String urlText = "<A HREF=\"" +
+                            String urlText = " | <A HREF=\"" +
                                     truncated +
                                     "\"><B>PARENT DIR</B></A>";
                             pout.print(urlText + "\r\n");
@@ -659,6 +659,13 @@ public class WebServer extends Thread
 //                                    "</TD></TR>\r\n");
                         }
 
+                        if(Stuff.private_dir.length() > 0)
+                        {
+                            pout.print(" | <A HREF=\"" + Stuff.private_dir +
+                                "\"><B>PRIVATE DIR</B></A>");
+                        }
+
+                        pout.print("<BR>\r\n");
 
 // must always encode in multipart data in case the filename has a ?
 // the order of the widgets determines the order of the form data

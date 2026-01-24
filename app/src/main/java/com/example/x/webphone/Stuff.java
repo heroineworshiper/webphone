@@ -60,6 +60,7 @@ public class Stuff extends Service
     static final int SORT_DATE = 2;
     static int sortOrder = SORT_PATH;
     static boolean sortDescending = false;
+    static String private_dir = "";
 
     static void initialize(Activity activity)
     {
@@ -76,6 +77,7 @@ public class Stuff extends Service
             Stuff.sortDescending = false;
         else
             Stuff.sortDescending = true;
+        private_dir = activity.getFilesDir().toString();
     }
 
     static void log(String x, String y)

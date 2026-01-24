@@ -39,6 +39,7 @@ public class Stuff
     static final int SORT_SIZE = 1;
     static final int SORT_DATE = 2;
     static int sortOrder = SORT_PATH;
+    static String private_dir = "";
 
 
     public static void main(String[] args)
