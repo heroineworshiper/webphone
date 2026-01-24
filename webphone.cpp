@@ -1036,7 +1036,7 @@ public:
                         decodedPath.c_str());
                     print(string);
                     sprintf(string,
-                        "<A HREF=\"%s\"> <B>RELOAD </B></A><BR>\r\n",
+                        "<A HREF=\"%s\"> <B>RELOAD </B></A>",
                         path->c_str());
                     print(string);
 
@@ -1054,14 +1054,14 @@ public:
 
                         std::string output;
 //                        output.append("<TR><TD></TD><TD></TD><TD>");
-                        output.append("<A HREF=\"");
+                        output.append(" | <A HREF=\"");
                         output.append(truncated.c_str());
                         output.append("\">"
                             "<B>PARENT DIR</B></A>");
 //                        output.append("</TD></TR>\r\n");
-                        output.append("<BR>\r\n");
                         print(output.c_str());
                     }
+                    print("<BR>\r\n");
 
 // must always encode in multipart data in case the filename has a ?
 // the order of the widgets determines the order of the form data
