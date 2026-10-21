@@ -1558,7 +1558,7 @@ Stuff.log("WebServerThread", "getContentDisposition text=" + text);
 
             while(true)
             {
-//Stuff.log("WebServerThread", "handlePost 1");
+Stuff.log("WebServerThread", "handlePost 1");
                 Map<String, String> result = getContentDisposition(in, boundary);
                 String filename = result.get("filename");
                 String name = result.get("name");
@@ -1634,12 +1634,19 @@ Stuff.log("WebServerThread", "handlePost saving temp to " + tempPath);
                         String decodedName = decodeHtml(name);
                         
                         
-Stuff.log("WebServerThread", "handlePost name=" + name + " value=" + value);
+//Stuff.log("WebServerThread", "handlePost 1 name=" + name + " value=" + value);
                         if(value.equals(CHECKED))
                             fileList.add(decodedName);
                         else
                         {
-                            String decodedValue = decodeHtml(value);
+                            String decodedValue = null;
+// preserve & symbol in the text editor while dropping unicode support
+// This is the normal usage pattern;
+                            if(name.equals("__EDITTEXT"))
+                                decodedValue = value;
+                            else
+                                decodedValue = decodeHtml(value);
+//Stuff.log("WebServerThread", "handlePost 1 name=" + name + " value=" + value + " decodedValue=" + decodedValue);
                             content.put(decodedName, decodedValue);
                         }
 
@@ -1653,7 +1660,7 @@ Stuff.log("WebServerThread", "handlePost name=" + name + " value=" + value);
             Stuff.log("WebServerThread", "handlePost done");
 // print the key values
             for (String key : content.keySet()) 
-                Stuff.log("WebServerThread", "handlePost key=" + key + " value=\"" + content.get(key) + "\"");
+                Stuff.log("WebServerThread", "handlePost 3 key=" + key + " value=\"" + content.get(key) + "\"");
 // print all the filenames
             for(int i = 0; i < fileList.size(); i++)
                 Stuff.log("WebServerThread", "handlePost selected file=" + fileList.get(i));

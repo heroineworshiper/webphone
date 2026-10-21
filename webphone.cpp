@@ -2012,7 +2012,14 @@ __LINE__, result.name.c_str(), decodedName.c_str());
                     {
 //                        content.insert(std::make_pair(result.name, result2.value));
                         std::string decodedValue;
-                        decodeHTML(&decodedValue, &result2.value);
+
+
+// preserve & symbol in the text editor while dropping unicode support
+// This is the normal usage pattern;
+                        if(!decodedName.compare("__EDITTEXT"))
+                            decodedValue.assign(result2.value);
+                        else
+                            decodeHTML(&decodedValue, &result2.value);
                         content.insert(std::make_pair(decodedName, decodedValue));
                     }
 
